@@ -156,7 +156,7 @@ models %>%
 
 f <- models %>% 
   forecast(., new_data = test_NO1)
-f %>% autoplot(test_NO1)
+f %>% autoplot(NO1)
 ```
 ```{r}
 f <- models %>% 

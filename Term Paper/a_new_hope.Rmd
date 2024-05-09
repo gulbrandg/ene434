@@ -1,0 +1,10 @@
+---
+title: "a_new_hope"
+author: "Gulbrand Galaasen"
+date: "2024-05-09"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
