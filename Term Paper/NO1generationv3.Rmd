@@ -34,7 +34,7 @@ gather_generation <- function(area, year) {
     mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
     mutate(hydro = as.double(hydro)) %>%  
     group_by(date) %>% 
-    summarize(hydro = sum(hydro, na.rm = TRUE))
+    summarize(hydro = mean(hydro, na.rm = TRUE))
 }
 
 gather_generation_area <- function(area) {
@@ -147,7 +147,7 @@ test_NO5 <- create_fit_test(NO5, SEP_DATE, "test")
 models <- 
   fit_NO5 %>% 
   fill_gaps() %>%
-  model(mod1 = ARIMA(gen ~ 0 + res))
+  model(mod1 = ARIMA(gen ~ res + pri))
 ```
 
 ```{r}
