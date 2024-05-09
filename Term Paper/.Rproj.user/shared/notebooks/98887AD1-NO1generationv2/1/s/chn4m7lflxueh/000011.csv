@@ -1,0 +1,4 @@
+"0","# Create combined data set"
+"0","folder_path <- ""NO1_generation_per_type"""
+"0","data_list <- process_generation_data_folder(folder_path)"
+"0","NO1_combined <- merge_all_data(data_list)"

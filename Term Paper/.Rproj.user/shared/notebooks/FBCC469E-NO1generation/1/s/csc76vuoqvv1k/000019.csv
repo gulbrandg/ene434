@@ -1,0 +1,6 @@
+"0","  as_tsibble(index = date)
+"
+"2","Error: unexpected symbol in:
+""
+  as_tsibble""
+"

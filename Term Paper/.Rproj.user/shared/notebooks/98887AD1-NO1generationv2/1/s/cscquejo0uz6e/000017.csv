@@ -1,0 +1,28 @@
+"0","glimpse(NO1_daily_combined_weather)
+"
+"1","Rows: 3,149"
+"1",""
+"1","
+"
+"1","Columns: 15"
+"1",""
+"1","
+"
+"1","$ date                                                 [3m[38;5;246m<date>[39m[23m 2015-01-01, 2015-01-02, 2015-01-03,…
+$ biomass_actual_aggregated_mw                         [3m[38;5;246m<dbl>[39m[23m NA, NA, NA, NA, NA, NA, NA, NA, NA, …
+$ fossil_gas_actual_aggregated_mw                      [3m[38;5;246m<dbl>[39m[23m 20.0, 20.0, 16.0, 16.0, 14.9, 15.0, …
+$ hydro_run_of_river_and_poundage_actual_aggregated_mw [3m[38;5;246m<dbl>[39m[23m 837.4, 818.7, 828.9, 792.6, 782.5, 7…
+$ hydro_water_reservoir_actual_aggregated_mw           [3m[38;5;246m<dbl>[39m[23m 1192.1, 1195.8, 1198.6, 1322.5, 1550…
+$ other_actual_aggregated_mw                           [3m[38;5;246m<dbl>[39m[23m 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, …
+$ waste_actual_aggregated_mw                           [3m[38;5;246m<dbl>[39m[23m NA, NA, NA, NA, NA, NA, NA, NA, NA, …
+$ wind_onshore_actual_aggregated_mw                    [3m[38;5;246m<dbl>[39m[23m 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+$ navn                                                 [3m[38;5;246m<chr>[39m[23m ""Oslo - Kjelsås"", ""Oslo - Kjelsås"", …
+$ stasjon                                              [3m[38;5;246m<chr>[39m[23m ""SN18440"", ""SN18440"", ""SN18440"", ""SN…
+$ nedbor_dogn                                          [3m[38;5;246m<dbl>[39m[23m 0.8, 15.0, 0.1, 0.0, 0.0, 2.4, 16.3,…
+$ middeltemperatur_dogn                                [3m[38;5;246m<dbl>[39m[23m NA, NA, NA, NA, NA, NA, NA, NA, NA, …
+$ middel_av_middelvind_fra_hovedobs_dogn               [3m[38;5;246m<dbl>[39m[23m NA, NA, NA, NA, NA, NA, NA, NA, NA, …
+$ hoyeste_vindkast_dogn                                [3m[38;5;246m<dbl>[39m[23m NA, NA, NA, NA, NA, NA, NA, NA, NA, …
+$ hoyeste_middelvind_dogn                              [3m[38;5;246m<dbl>[39m[23m NA, NA, NA, NA, NA, NA, NA, NA, NA, …"
+"1",""
+"1","
+"

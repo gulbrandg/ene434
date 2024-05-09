@@ -1,0 +1,123 @@
+---
+title: "Untitled"
+author: "Matias Kongsvik"
+date: "2024-04-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning = FALSE}
+library(tidyverse)
+library(zoo)
+library(lubridate)
+library(janitor)
+library(hablar)
+library(tsibble)
+library(fpp3)
+```
+
+Finished function for loading and cleaning all files combined to one
+```{r, warning = FALSE}
+process_generation_data_folder <- function(folder_path) {
+  file_list <- list.files(path = folder_path, pattern = "\\.csv$", full.names = TRUE)
+  all_data <- lapply(file_list, function(file_path) {
+    generation_data <- read_csv(file_path, show_col_types = FALSE) %>% 
+      clean_names() %>%
+      hablar::retype() %>%  # Attempt to auto-detect and set correct types
+      separate(mtu, sep="-", into=c("period", "end")) %>%
+      mutate(end = str_remove(end, "\\s*\\(CET/CEST\\)"),
+             period = as.POSIXct(period, format="%d.%m.%Y %H:%M", tz = "CET"),
+             end = as.POSIXct(end, format="%d.%m.%Y %H:%M", tz = "CET"),
+             date = lead(as.Date(period), 1)) %>%  # Convert period to Date for summarizing and lead to match posixct
+      filter(!is.na(period)) %>%
+      arrange(desc(is.na(hydro_water_reservoir_actual_aggregated_mw))) %>%
+      group_by(period) %>%
+      filter(row_number() == 1) %>%
+      ungroup()
+
+    # Enforce double type for all columns from the 4th onward
+    column_indices <- 4:(ncol(generation_data)-1)  # Indices of columns to convert
+    generation_data <- generation_data %>%
+      mutate(across(.cols = column_indices, .fns = ~as.numeric(.x)))
+
+    # Complete date sequence for the given year
+    year_used <- unique(year(generation_data$period))
+    start_date <- as.POSIXct(paste(year_used, "-01-01 00:00", sep=""), tz = "CET")
+    end_date <- as.POSIXct(paste(year_used, "-12-31 23:00", sep=""), tz = "CET")
+    complete_dates <- tibble(period = seq(from = start_date, to = end_date, by = "hour"))
+
+    # Merge and fill
+    generation_data <- complete_dates %>%
+      left_join(generation_data, by = "period") %>%
+      fill(names(generation_data), .direction = "down") %>%
+      as_tsibble(index = period)
+
+    return(generation_data)
+  })
+
+  return(all_data)
+}
+
+# Merge all data frames into one and make sure to retain the 'date' column
+merge_all_data <- function(data_list) {
+  full_data <- bind_rows(data_list)
+  return(full_data)
+}
+
+```
+
+Combined data set
+```{r, warning = false}
+# Create combined data set
+folder_path <- "NO1_generation_per_type"
+data_list <- process_generation_data_folder(folder_path)
+NO1_combined <- merge_all_data(data_list)
+```
+
+Daily combined data set
+```{r}
+# Create aggregated daily combined data set
+NO1_daily_combined <- NO1_combined %>%
+  as_tibble() %>%
+  group_by(date) %>% 
+  summarise(across(where(is.numeric), ~ round(mean(.), 1)), .groups = "drop") %>%
+  select(where(~!all(is.na(.)))) %>%
+  as_tsibble(index = date)
+```
+
+
+```{r}
+
+weatherdata <- read_delim("weatherdata.csv", delim = ";", show_col_types = FALSE) %>% 
+  clean_names() %>% 
+  retype()
+
+glimpse(weatherdata)
+
+# Load and initially clean the data
+weatherdata <- read_delim("weatherdata.csv", delim = ";", show_col_types = FALSE) %>%
+  clean_names() %>%
+  mutate(across(where(is.character), ~if_else(.x == "-", NA_character_, .x))) %>% 
+  mutate(across(.cols = 4:ncol(.), ~as.numeric(str_replace(.x, ",", ".")), .names = "{.col}")) %>% 
+  mutate(tid_norsk_normaltid = as.Date(tid_norsk_normaltid, format = "%d.%m.%Y")) %>% 
+  rename(date = tid_norsk_normaltid) %>% 
+  filter(!is.na(stasjon)) %>% 
+  filter(navn == "Oslo - Kjelsås")
+
+
+weatherdata <- weatherdata %>%
+  as_tsibble(index = date)
+  
+```
+
+```{r}
+NO1_daily_combined_weather <- NO1_daily_combined %>%
+  right_join(weatherdata, by = "date")
+
+glimpse(NO1_daily_combined_weather)
+```
+
+

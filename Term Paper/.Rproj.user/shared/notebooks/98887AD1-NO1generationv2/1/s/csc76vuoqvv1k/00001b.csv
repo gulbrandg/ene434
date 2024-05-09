@@ -1,0 +1,7 @@
+"0","# Create aggregated daily combined data set"
+"0","NO1_daily_combined <- NO1_combined %>%"
+"0","  as_tibble() %>%"
+"0","  group_by(date) %>% "
+"0","  summarise(across(where(is.numeric), ~ round(mean(.), 1)), .groups = ""drop"") %>%"
+"0","  select(where(~!all(is.na(.)))) %>%"
+"0","  as_tsibble(index = date)"

@@ -1,0 +1,13 @@
+"0","weatherdata <- weatherdata %>%
+
+  as_tsibble(index = date)
+"
+"1","[1m[33mError[39m in `validate_tsibble()`:[22m
+[33m![39m A valid tsibble must have distinct rows identified by key and index.
+[34mℹ[39m Please use `duplicates()` to check the duplicated rows.
+Backtrace:
+[90m 1. [39mweatherdata %>% as_tsibble(index = date)
+[90m 3. [39m[1mtsibble[22m:::as_tsibble.tbl_df(., index = date)
+[90m 4. [39mtsibble::build_tsibble(...)
+[90m 5. [39m[1m[94mtsibble:::validate_tsibble([39m[22mdata = tbl, key = key_vars, key_data = key_data, index = index[1m[94m)[39m[22m
+"
