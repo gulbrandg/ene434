@@ -25,9 +25,28 @@ CUT_OFF <- "2024-05-01"
 areas <- c("DE", "DK", "NL", "UK")
 ```
 
-Load
 
-```{r, warning=FALSE, message=FALSE}
+```{r}
+# Exchange
+cross_border_flow <- function(area, year) {
+  read_csv(paste0("Cross Border Flow/", area, "_", year, ".csv"),show_col_types = FALSE) %>% 
+    .[,c(1,2,3)] %>% 
+     `colnames<-`(c("date", "import", "export")) %>% 
+    separate(date, sep="-", into=c("date", NULL)) %>% 
+    mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
+    mutate(import = as.double(import),
+           export = as.double(export)) %>% 
+    group_by(date) %>%
+    summarize(exchange = sum(import, na.rm = TRUE) - sum(export, na.rm = TRUE)) %>% 
+    mutate(area = area) %>% 
+    filter(date < as.Date(CUT_OFF))
+}
+
+gather_cross_flow <- function(area) {
+  map2(rep(area, 7), c("2018":"2024"), cross_border_flow) %>% 
+    bind_rows()
+}
+
 # Load
 gather_load <- function(area, year) {
   read_csv(paste0("load_", area, "/load_", area, "_", year, ".csv")) %>% 
@@ -48,32 +67,33 @@ gather_load_area <- function(area) {
     mutate(area = area)
 }
 
-df <- gather_load_area("NO")
-
-```
-
-```{r}
-df %>% 
-  ggplot(aes(x = date, y = load)) +
-  geom_line()
-```
-
-
-Generation data.
-
-```{r, warning=FALSE, message=FALSE}
 # Generation
 gather_generation <- function(area, year) {
-  read_csv(paste0("gen_", area, "/gen_", area, "_", year, ".csv")) %>% 
-    .[,c(2,20,22,23)] %>% 
-    `colnames<-`(c("date", "sol", "wnd_off", "wnd_on")) %>% 
-    drop_na() %>% 
-    separate(date, sep="-", into=c("date", NULL)) %>% 
-    mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
-    mutate(vrep = as.double(sol) + as.double(wnd_off) + as.double(wnd_on)) %>%
-    group_by(date) %>% 
-    summarize(vrep = sum(vrep)) %>% 
-    filter(date < as.Date(CUT_OFF))
+  if (area == "NO") {
+    read_csv(paste0("gen_", area, "/gen_", area, "_", year, ".csv"), na = c("n/e", "N/A", "-")) %>% 
+      .[,2:23] %>% 
+      mutate(gen = rowSums(.[,2:22], na.rm = TRUE)) %>% 
+      select(MTU, gen) %>% 
+      rename(date = MTU) %>% 
+      drop_na() %>% 
+      separate(date, sep="-", into=c("date", NULL)) %>% 
+      mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
+      group_by(date) %>% 
+      summarize(gen = sum(gen)) %>% 
+      filter(date < as.Date(CUT_OFF))
+      
+  } else {
+    read_csv(paste0("gen_", area, "/gen_", area, "_", year, ".csv")) %>% 
+      .[,c(2,20,22,23)] %>% 
+      `colnames<-`(c("date", "sol", "wnd_off", "wnd_on")) %>% 
+      drop_na() %>% 
+      separate(date, sep="-", into=c("date", NULL)) %>% 
+      mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
+      mutate(vrep = as.double(sol) + as.double(wnd_off) + as.double(wnd_on)) %>%
+      group_by(date) %>% 
+      summarize(vrep = sum(vrep)) %>% 
+      filter(date < as.Date(CUT_OFF))
+  }
 }
 
 gather_generation_area <- function(area) {
@@ -96,10 +116,45 @@ gather_generation_area <- function(area) {
       mutate(area = area) 
   }
 }
+```
 
-df <- map(areas, gather_generation_area) %>% 
+```{r, warning=FALSE, message=FALSE}
+# Gather data
+
+# Exchange
+exchange <- map(areas, gather_cross_flow) %>%
+  bind_rows()
+
+# Load
+load_NO <- gather_load_area("NO")
+
+# Generation
+gen_NO <- gather_generation_area("NO")
+
+# Variable renewable production
+vrep <- map(areas, gather_generation_area) %>% 
   bind_rows()
 ```
+
+```{r}
+df <- exchange %>% 
+  inner_join(., vrep, by = c("date", "area")) %>% 
+  inner_join(., gen_NO[,c(1,2)], by = c("date")) %>% 
+  inner_join(., load_NO[,c(1,2)], by = c("date"))
+```
+
+
+
+```{r}
+df %>% 
+  filter(area == "DK") %>% 
+  #filter(date >= as.Date("2021-10-01")) %>% 
+  ggplot(aes(x = load, y = exchange, color = date)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+
 
 ```{r}
 df %>% 
