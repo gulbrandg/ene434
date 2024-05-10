@@ -19,37 +19,68 @@ library(tsibble)
 library(fpp3)
 library(tseries)
 library(dynlm)
+library(ggplot2)
 ```
 
-Dependent variable: Cross Border Flow
 ```{r}
-test <- read_csv("Cross Border Flow/Cross-Border Physical Flow_201801010000-201901010000norden.csv")
+CUT_OFF <- "2024-05-01"
+countries <- c("de", "dk", "nl", "swe", "fin")
+
+```
+
+
+Dependent variable: Cross Border Flow
+```{r, warning=FALSE}
 
 cross_border_flow <- function(country, year) {
-  read_csv(paste0("Cross Border Flow/", country, "_", year, ".csv")) %>% 
+  read_csv(paste0("Cross Border Flow/", country, "_", year, ".csv"),show_col_types = FALSE) %>% 
     .[,c(1,2,3)] %>% 
      `colnames<-`(c("date", "import", "export")) %>% 
     separate(date, sep="-", into=c("date", NULL)) %>% 
     mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
     mutate(import = as.double(import),
            export = as.double(export),
-           country = as.character(paste0(country))) %>%  
-    group_by(date) %>% 
-    summarize(import = sum(import, na.rm = TRUE),
-              export = sum(export, na.rm = TRUE),
-              net_export = sum(export, na.rm = TRUE) - sum(import, na.rm = TRUE),
-              country = unique(country))
+           country = as.character(paste0(country))) %>% 
+    group_by(date) %>%
+    summarize(exchange = sum(import, na.rm = TRUE) - sum(export, na.rm = TRUE)) %>% 
+    mutate(country = country)
 }
+df <- cross_border_flow("uk", "2018")
 
 gather_cross_flow <- function(country) {
   map2(rep(country, 7), c("2018":"2024"), cross_border_flow) %>% 
-    bind_rows() 
+    bind_rows()
 }
+
+df <- gather_cross_flow("uk")
+
+cross_border_flow_all <- map(c("uk", "nl", "ger", "den"), gather_cross_flow) %>%
+  bind_rows()
+
+# gather_cross_flow <- function(country) {
+#   if(country == "uk") {
+#     read_csv(paste0("Cross Border Flow/", country, ".csv"), show_col_types = FALSE) %>% 
+#       .[,c(3,6,7)] %>% 
+#       `colnames<-`(c("date", "type", "net_export")) %>% 
+#       filter(type %in% c("INTNSL")) %>% 
+#       mutate(date = as.Date(with_tz(date, tzone = "Europe/Oslo"), tz = "Europe/Oslo")) %>%
+#       group_by(date) %>%
+#       summarize(net_export = sum(as.double(-net_export), na.rm = TRUE)) %>%
+#       arrange(date) %>%
+#       filter(date < as.Date(CUT_OFF)) %>%
+#       mutate(country = country)
+#       
+#   } else {
+#   map2(rep(country, 7), c("2018":"2024"), cross_border_flow)
+#     bind_rows() 
+#   }
+# }
+
+gather_cross_flow("ger") %>% print()
 
 cross_border_flow_all <- map(c("swe", "den", "ger", "nl", "fin"), gather_cross_flow) %>% 
   bind_rows()
                
-?pivot_longer
 
 ```
 
