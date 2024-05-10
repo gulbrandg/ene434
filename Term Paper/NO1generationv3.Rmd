@@ -21,6 +21,38 @@ library(tseries)
 library(dynlm)
 ```
 
+Dependent variable: Cross Border Flow
+```{r}
+test <- read_csv("Cross Border Flow/Cross-Border Physical Flow_201801010000-201901010000norden.csv")
+
+cross_border_flow <- function(country, year) {
+  read_csv(paste0("Cross Border Flow/", country, "_", year, ".csv")) %>% 
+    .[,c(1,2,3)] %>% 
+     `colnames<-`(c("date", "import", "export")) %>% 
+    separate(date, sep="-", into=c("date", NULL)) %>% 
+    mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
+    mutate(import = as.double(import),
+           export = as.double(export),
+           country = as.character(paste0(country))) %>%  
+    group_by(date) %>% 
+    summarize(import = sum(import, na.rm = TRUE),
+              export = sum(export, na.rm = TRUE),
+              net_export = sum(export, na.rm = TRUE) - sum(import, na.rm = TRUE),
+              country = unique(country))
+}
+
+gather_cross_flow <- function(country) {
+  map2(rep(country, 7), c("2018":"2024"), cross_border_flow) %>% 
+    bind_rows() 
+}
+
+cross_border_flow_all <- map(c("swe", "den", "ger", "nl", "fin"), gather_cross_flow) %>% 
+  bind_rows()
+               
+?pivot_longer
+
+```
+
 
 Target variable: Daily hydro generation. 
 
