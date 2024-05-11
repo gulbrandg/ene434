@@ -9,6 +9,12 @@ output: word_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Research question:
+
+What are the drivers for over seas exchange from Norway, and how will the future exchange look taking into account different fundamental changes in Norwegian generation and consumption, and variable renewable energy in northern continental Europe and UK.  
+
+
+
 ```{r, warning = FALSE, message = FALSE}
 library(tidyverse)
 library(zoo)
@@ -30,23 +36,21 @@ areas <- c("DE", "DK", "NL", "UK")
 # Dates for when connections were fully operational
 DE_conn <- "2021-05-27"
 UK_conn <- "2021-10-01"
-
-
 ```
 
 
 ```{r}
 # Exchange
 cross_border_flow <- function(area, year) {
-  read_csv(paste0("data/exchange/", area, "_", year, ".csv"),show_col_types = FALSE) %>% 
+  read_csv(paste0("data/exchange/", area, "_", year, ".csv"), show_col_types = FALSE) %>% 
     .[,c(1,2,3)] %>% 
      `colnames<-`(c("date", "import", "export")) %>% 
     separate(date, sep="-", into=c("date", NULL)) %>% 
+    mutate(import = as.double(import, na.rm = TRUE),
+           export = as.double(export, na.rm = TRUE)) %>% 
     mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
-    mutate(import = as.double(import),
-           export = as.double(export)) %>% 
     group_by(date) %>%
-    summarize(exchange = sum(import, na.rm = TRUE) - sum(export, na.rm = TRUE)) %>% 
+    summarize(exchange = mean(import, na.rm = TRUE) - mean(export, na.rm = TRUE)) %>% 
     mutate(area = area) %>% 
     filter(date < as.Date(CUT_OFF))
 }
@@ -55,6 +59,7 @@ gather_cross_flow <- function(area) {
   map2(rep(area, 7), c("2018":"2024"), cross_border_flow) %>% 
     bind_rows()
 }
+
 
 # Consumption
 gather_load <- function(area, year) {
@@ -66,7 +71,7 @@ gather_load <- function(area, year) {
     mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
     mutate(load = as.double(load)) %>%
     group_by(date) %>% 
-    summarize(load = sum(load)) %>% 
+    summarize(load = mean(load)) %>% 
     filter(date < as.Date(CUT_OFF))
 }
 
@@ -85,10 +90,10 @@ gather_generation <- function(area, year) {
       select(MTU, gen) %>% 
       rename(date = MTU) %>% 
       drop_na() %>% 
-      separate(date, sep="-", into=c("date", NULL)) %>% 
+      separate(date, sep="-", into=c("date", NULL)) %>%
       mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
       group_by(date) %>% 
-      summarize(gen = sum(gen)) %>% 
+      summarize(gen = mean(gen)) %>% 
       filter(date < as.Date(CUT_OFF))
       
   } else {
@@ -97,10 +102,10 @@ gather_generation <- function(area, year) {
       `colnames<-`(c("date", "sol", "wnd_off", "wnd_on")) %>% 
       drop_na() %>% 
       separate(date, sep="-", into=c("date", NULL)) %>% 
-      mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
       mutate(vrep = as.double(sol) + as.double(wnd_off) + as.double(wnd_on)) %>%
+      mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
       group_by(date) %>% 
-      summarize(vrep = sum(vrep)) %>% 
+      summarize(vrep = mean(vrep)) %>% 
       filter(date < as.Date(CUT_OFF))
   }
 }
@@ -112,9 +117,10 @@ gather_generation_area <- function(area) {
       .[,c(3,6,7)] %>% 
       `colnames<-`(c("date", "type", "vrep")) %>%
       filter(type %in% c("WIND")) %>% 
+      mutate(vrep = as.double(vrep)) %>% 
       mutate(date = as.Date(with_tz(date, tzone = "Europe/Oslo"), tz = "Europe/Oslo")) %>% 
       group_by(date) %>%
-      summarize(vrep = sum(as.double(vrep), na.rm = TRUE)) %>% 
+      summarize(vrep = mean(vrep, na.rm = TRUE)) %>% 
       arrange(date) %>% 
       filter(date < as.Date(CUT_OFF)) %>% 
       mutate(area = area)
@@ -150,25 +156,32 @@ df <- exchange %>%
   inner_join(., vrep, by = c("date", "area")) %>% 
   inner_join(., gen_NO[,c(1,2)], by = c("date")) %>% 
   inner_join(., load_NO[,c(1,2)], by = c("date"))
+
+is.nan.data.frame <- function(x)
+do.call(cbind, lapply(x, is.nan))
+df[is.nan(df)] <- 0
 ```
 
 
+Forecast
 
 ```{r}
+res <- map(c("SE", "FI"), gather_cross_flow) %>%
+  bind_rows() %>% 
+  group_by(date) %>% 
+  summarise(exchange = sum(exchange))
+
 df %>% 
-  filter(area == "DE") %>% 
-  filter(exchange != 0) %>% 
-  #filter(date >= as.Date("2020-12-09")) %>% 
-  ggplot(aes(x = load, y = exchange, color = date)) +
-  geom_point() +
-  geom_smooth(method = "lm")
-```
-
-
-
-```{r}
-df %>% 
-  ggplot(aes(x = date, y = vrep, color = area)) + 
-  geom_line()
+  #filter(area != "DE") %>% 
+  group_by(date) %>% 
+  summarise(exchange = sum(exchange),
+            gen = first(gen),
+            load = first(load)) %>% 
+  mutate(exchange = exchange + res$exchange,
+         tot = gen + exchange - load) %>% 
+  ggplot() +
+  geom_line(aes(x = date, y = tot, color = "tot")) +
+  geom_line(aes(x = date, y = load, color = "load")) + 
+  geom_line(aes(x = date, y = exchange, color = "exchange"))
 ```
 
