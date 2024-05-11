@@ -33,6 +33,9 @@ CUT_OFF <- "2024-05-01"
 # The areas/connections-to we study
 areas <- c("DE", "DK", "NL", "UK")
 
+# Bidding zones for Norwegian day-ahead electricity prices
+Bidding_zone <- c("NO1", "NO2", "NO3", "NO4", "NO5")
+
 # Dates for when connections were fully operational
 DE_conn <- "2021-05-27"
 UK_conn <- "2021-10-01"
@@ -40,6 +43,26 @@ UK_conn <- "2021-10-01"
 
 
 ```{r}
+# Prices
+dayAheadPrices <- function(Bidding_zone, year) {
+  read_csv(paste0("data/Norwegian_Day_Ahead_prices/DA_price_", Bidding_zone, "_", year, ".csv"),show_col_types = FALSE) %>% 
+    .[,c(1,2)] %>% 
+     `colnames<-`(c("date", "price")) %>% 
+    separate(date, sep="-", into=c("date", NULL)) %>% 
+    mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
+    mutate(price = as.double(price),
+           Bidding_zone = Bidding_zone) %>%
+    group_by(date) %>%
+    filter(date < as.Date(CUT_OFF)) %>%
+    summarise(price = mean(price), Bidding_zone = unique(Bidding_zone))
+}
+
+gather_dayAheadPrices <- function(Bidding_zone) {
+  map2(rep(Bidding_zone, 7), c("2018":"2024"), dayAheadPrices) %>% 
+    bind_rows()
+}
+
+
 # Exchange
 cross_border_flow <- function(area, year) {
   read_csv(paste0("data/exchange/", area, "_", year, ".csv"), show_col_types = FALSE) %>% 
@@ -136,6 +159,12 @@ gather_generation_area <- function(area) {
 ```{r, warning=FALSE, message=FALSE}
 # Gather data
 
+# Prices
+price <- map(Bidding_zone, gather_dayAheadPrices) %>%
+  bind_rows() %>% 
+  group_by(date) %>% 
+  summarise(price = mean(price))
+
 # Exchange
 exchange <- map(areas, gather_cross_flow) %>%
   bind_rows()
@@ -155,15 +184,14 @@ vrep <- map(areas, gather_generation_area) %>%
 df <- exchange %>% 
   inner_join(., vrep, by = c("date", "area")) %>% 
   inner_join(., gen_NO[,c(1,2)], by = c("date")) %>% 
-  inner_join(., load_NO[,c(1,2)], by = c("date"))
+  inner_join(., load_NO[,c(1,2)], by = c("date")) %>% 
+  inner_join(., price[,c(1,2)], by = c("date"))
 
 is.nan.data.frame <- function(x)
 do.call(cbind, lapply(x, is.nan))
 df[is.nan(df)] <- 0
 ```
 
-
-Forecast
 
 ```{r}
 res <- map(c("SE", "FI"), gather_cross_flow) %>%
@@ -183,5 +211,12 @@ df %>%
   geom_line(aes(x = date, y = tot, color = "tot")) +
   geom_line(aes(x = date, y = load, color = "load")) + 
   geom_line(aes(x = date, y = exchange, color = "exchange"))
+```
+
+
+Forecast
+
+```{r}
+
 ```
 
