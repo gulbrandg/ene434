@@ -41,11 +41,6 @@ Bidding_zone <- c("NO1", "NO2", "NO3", "NO4", "NO5")
 # Dates for when connections were fully operational
 DE_conn <- "2021-01-01"
 UK_conn <- "2021-10-01"
-
-cap <- tibble(area = c("DE", "DK", "NL", "UK"),
-              import_cap = c(1425, 1639, 730, 1330),
-              export_cap = c(-1407, -1658, -706, -1450),
-              from_date = c("2021-01-01", "2021-01-01", "2023-01-01", "2022-01-01"))
 ```
 
 
@@ -300,7 +295,7 @@ get_coeff_load <- function(a) {
 tibble(area = areas) %>% 
   mutate(gen = unlist(map(areas, get_coeff_gen)),
          vrep = unlist(map(areas, get_coeff_vrep)),
-         load = unlist(map(areas, get_coeff_gen)))
+         load = unlist(map(areas, get_coeff_load)))
 ```
 
 
@@ -326,9 +321,19 @@ df %>%
 ```
 
 
-
-
 Forecast exchange
+
+```{r}
+cap <- tibble(area = c("DE", "DK", "NL", "UK"),
+              import_cap = c(1425, 1639, 730, 1330),
+              export_cap = c(-1407, -1658, -706, -1450),
+              from_date = c("2021-01-01", "2021-01-01", "2023-01-01", "2022-01-01"))
+
+DATE_RANGE <- seq(as.Date(CUT_OFF), as.Date("2029-12-31"), by = "day")
+
+N_DAYS <- 
+
+```
 
 Firstly, we need to synthesize variable renewable production (VREP) in our data. This is done by taking data from 2023 and creating a pool of values for each month and area. Then for a single date, a future value is drawn from this pool given a month and area, and is then multiplied by a random factor [0.9, 1.1] to essentially simulate the uncertainty of wind and solar for a given day.  
 
