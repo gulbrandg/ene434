@@ -9,6 +9,12 @@ output: word_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Research question:
+
+What are the drivers for over seas exchange from Norway, and how will the future exchange look taking into account different fundamental changes in Norwegian generation and consumption, and variable renewable energy in northern continental Europe and UK.  
+
+
+
 ```{r, warning = FALSE, message = FALSE}
 library(tidyverse)
 library(zoo)
@@ -19,18 +25,6 @@ library(tsibble)
 library(fpp3)
 library(tseries)
 ```
-
-examining drivers for cross border power exchange in the Norwegian power market and forecast of future developments under different scenarios.
-
-"What are the key drivers influencing cross-border power exchanges from UK and continental Europe in the Norwegian power market, and how can these influences be projected into future scenarios?"
-
-## Introduction
-
-Purpose: Start by introducing the topic and stating the purpose of the research. Explain the significance of cross-border power exchanges for the Norwegian power market, focusing on economic, environmental, and energy security aspects.
-Research Question: Clearly state the refined research question.
-Scope: Outline the scope of the analysis, including the geographical focus, the time frame considered for historical data analysis, and the future scenarios to be examined.
-Structure of the Paper: Briefly describe the structure of the paper, outlining what each subsequent section will cover.
-
 
 ```{r}
 # Where our data ends
@@ -45,28 +39,23 @@ Bidding_zone <- c("NO1", "NO2", "NO3", "NO4", "NO5")
 # Dates for when connections were fully operational
 DE_conn <- "2021-05-27"
 UK_conn <- "2021-10-01"
-
-
 ```
 
 
-```{r, warning=FALSE}
+```{r}
+# Prices
 dayAheadPrices <- function(Bidding_zone, year) {
   read_csv(paste0("data/Norwegian_Day_Ahead_prices/DA_price_", Bidding_zone, "_", year, ".csv"),show_col_types = FALSE) %>% 
-    .[,c(1,2,3)] %>% 
-     `colnames<-`(c("date", "Price", "Currency")) %>% 
+    .[,c(1,2)] %>% 
+     `colnames<-`(c("date", "price")) %>% 
     separate(date, sep="-", into=c("date", NULL)) %>% 
     mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
-    mutate(Price = as.double(Price),
-           Bidding_zone = Bidding_zone,
-           Unit = "[EUR / MWh]") %>%
+    mutate(price = as.double(price),
+           Bidding_zone = Bidding_zone) %>%
     group_by(date) %>%
     filter(date < as.Date(CUT_OFF)) %>%
-    summarise(Price = mean(Price), Bidding_zone = unique(Bidding_zone), unique(Unit))
+    summarise(price = mean(price), Bidding_zone = unique(Bidding_zone))
 }
-
-# dayAheadPrices("NO1", 2018) %>% 
-#   print()
 
 gather_dayAheadPrices <- function(Bidding_zone) {
   map2(rep(Bidding_zone, 7), c("2018":"2024"), dayAheadPrices) %>% 
@@ -74,24 +63,17 @@ gather_dayAheadPrices <- function(Bidding_zone) {
 }
 
 
-
-```
-
-
-
-
-```{r}
 # Exchange
 cross_border_flow <- function(area, year) {
-  read_csv(paste0("data/exchange/", area, "_", year, ".csv"),show_col_types = FALSE) %>% 
+  read_csv(paste0("data/exchange/", area, "_", year, ".csv"), show_col_types = FALSE) %>% 
     .[,c(1,2,3)] %>% 
      `colnames<-`(c("date", "import", "export")) %>% 
     separate(date, sep="-", into=c("date", NULL)) %>% 
+    mutate(import = as.double(import, na.rm = TRUE),
+           export = as.double(export, na.rm = TRUE)) %>% 
     mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
-    mutate(import = as.double(import),
-           export = as.double(export)) %>% 
     group_by(date) %>%
-    summarize(exchange = sum(import, na.rm = TRUE) - sum(export, na.rm = TRUE)) %>% 
+    summarize(exchange = mean(import, na.rm = TRUE) - mean(export, na.rm = TRUE)) %>% 
     mutate(area = area) %>% 
     filter(date < as.Date(CUT_OFF))
 }
@@ -100,6 +82,7 @@ gather_cross_flow <- function(area) {
   map2(rep(area, 7), c("2018":"2024"), cross_border_flow) %>% 
     bind_rows()
 }
+
 
 # Consumption
 gather_load <- function(area, year) {
@@ -111,7 +94,7 @@ gather_load <- function(area, year) {
     mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
     mutate(load = as.double(load)) %>%
     group_by(date) %>% 
-    summarize(load = sum(load)) %>% 
+    summarize(load = mean(load)) %>% 
     filter(date < as.Date(CUT_OFF))
 }
 
@@ -130,10 +113,10 @@ gather_generation <- function(area, year) {
       select(MTU, gen) %>% 
       rename(date = MTU) %>% 
       drop_na() %>% 
-      separate(date, sep="-", into=c("date", NULL)) %>% 
+      separate(date, sep="-", into=c("date", NULL)) %>%
       mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
       group_by(date) %>% 
-      summarize(gen = sum(gen)) %>% 
+      summarize(gen = mean(gen)) %>% 
       filter(date < as.Date(CUT_OFF))
       
   } else {
@@ -142,10 +125,10 @@ gather_generation <- function(area, year) {
       `colnames<-`(c("date", "sol", "wnd_off", "wnd_on")) %>% 
       drop_na() %>% 
       separate(date, sep="-", into=c("date", NULL)) %>% 
-      mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
       mutate(vrep = as.double(sol) + as.double(wnd_off) + as.double(wnd_on)) %>%
+      mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
       group_by(date) %>% 
-      summarize(vrep = sum(vrep)) %>% 
+      summarize(vrep = mean(vrep)) %>% 
       filter(date < as.Date(CUT_OFF))
   }
 }
@@ -157,9 +140,10 @@ gather_generation_area <- function(area) {
       .[,c(3,6,7)] %>% 
       `colnames<-`(c("date", "type", "vrep")) %>%
       filter(type %in% c("WIND")) %>% 
+      mutate(vrep = as.double(vrep)) %>% 
       mutate(date = as.Date(with_tz(date, tzone = "Europe/Oslo"), tz = "Europe/Oslo")) %>% 
       group_by(date) %>%
-      summarize(vrep = sum(as.double(vrep), na.rm = TRUE)) %>% 
+      summarize(vrep = mean(vrep, na.rm = TRUE)) %>% 
       arrange(date) %>% 
       filter(date < as.Date(CUT_OFF)) %>% 
       mutate(area = area)
@@ -176,13 +160,10 @@ gather_generation_area <- function(area) {
 # Gather data
 
 # Prices
-Prices <- map(Bidding_zone, gather_dayAheadPrices) %>%
-  bind_rows()
-
-mean_prices_all_bidding_zones <- Prices %>% 
+price <- map(Bidding_zone, gather_dayAheadPrices) %>%
+  bind_rows() %>% 
   group_by(date) %>% 
-  summarise(mean_price_NO_all = mean(Price)) %>% 
-  mutate(Unit = "[EUR / MWh]")
+  summarise(price = mean(price))
 
 # Exchange
 exchange <- map(areas, gather_cross_flow) %>%
@@ -204,61 +185,38 @@ df <- exchange %>%
   inner_join(., vrep, by = c("date", "area")) %>% 
   inner_join(., gen_NO[,c(1,2)], by = c("date")) %>% 
   inner_join(., load_NO[,c(1,2)], by = c("date")) %>% 
-  inner_join(., mean_prices_all_bidding_zones[c(1,2)], by = c("date"))
-```
+  inner_join(., price[,c(1,2)], by = c("date"))
 
+is.nan.data.frame <- function(x)
+do.call(cbind, lapply(x, is.nan))
+df[is.nan(df)] <- 0
+```
 
 
 ```{r}
+res <- map(c("SE", "FI"), gather_cross_flow) %>%
+  bind_rows() %>% 
+  group_by(date) %>% 
+  summarise(exchange = sum(exchange))
+
 df %>% 
-  filter(area == "DE") %>% 
-  filter(exchange != 0) %>% 
-  #filter(date >= as.Date("2020-12-09")) %>% 
-  ggplot(aes(x = load, y = exchange, color = date)) +
-  geom_point() +
-  geom_smooth(method = "lm")
-```
-```{r, warning=FALSE}
-
-Facet_gen <- df %>% 
-  select(date, exchange, area, gen) %>% 
-  ggplot(aes(x = gen, y = exchange, color = date)) +
-  geom_point() +
-  facet_wrap(~ area, scales = 'free_y')+
-  geom_smooth(method = "lm") +
-  labs(title = "Title XXXX", x = "Generation", y = "Exchange", color = "Date") + 
-  theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
-
-Facet_vrep <- df %>% 
-  select(date, exchange, area, vrep) %>% 
-  ggplot(aes(x = vrep, y = exchange, color = date)) +
-  geom_point() +
-  facet_wrap(~ area, scales = 'free')+
-  geom_smooth(method = "lm") +
-  labs(title = "Title XXXX", x = "VRE", y = "Exchange", color = "Date") + 
-  theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
-
-Facet_load <- df %>% 
-  select(date, exchange, area, load) %>% 
-  ggplot(aes(x = load, y = exchange, color = date)) +
-  geom_point() +
-  facet_wrap(~ area, scales = 'free')+
-  geom_smooth(method = "lm") +
-  labs(title = "Title XXXX", x = "Load", y = "Exchange", color = "Date") + 
-  theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
-
-
-Facet_gen
-Facet_vrep
-Facet_load
-
+  #filter(area != "DE") %>% 
+  group_by(date) %>% 
+  summarise(exchange = sum(exchange),
+            gen = first(gen),
+            load = first(load)) %>% 
+  mutate(exchange = exchange + res$exchange,
+         tot = gen + exchange - load) %>% 
+  ggplot() +
+  geom_line(aes(x = date, y = tot, color = "tot")) +
+  geom_line(aes(x = date, y = load, color = "load")) + 
+  geom_line(aes(x = date, y = exchange, color = "exchange"))
 ```
 
 
+Forecast
 
 ```{r}
-df %>% 
-  ggplot(aes(x = date, y = vrep, color = area)) + 
-  geom_line()
+
 ```
 

@@ -9,10 +9,24 @@ output: word_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Introduction
+The European energy landscape is undergoing a significant transformation towards sustainable solutions, propelled by increasing demands for renewable resources and enhanced concerns regarding energy security. This shift has affected the power market dynamics in Norway due to the market coupling and transmission interconnections with Europe. The market coupling and interconnections facilitate the exchange of power to and from Norway, thereby enhancing grid stability, bolstering regional energy security, and ensuring the socially optimum allocation of scarce resources.
+
+Impact of Geopolitical Events
+The recent energy crisis, exacerbated by geopolitical conflicts such as the Russian invasion of Ukraine in early 2022, has underscored the fragility of European energy supplies. This event led to a significant reduction in the supply of natural gas, a pivotal energy source for many European countries, thereby accelerating investment in variable renewable energy (VRE) sources such as wind and solar power. As the proportion of VRE in the energy mix increases, power prices have experienced marked volatility, primarily driven by the variability in supply-demand dynamics and the constraints of transmission capacities. 
+
+Market Mechanisms and Pricing
+In Norway, the hourly spot price for wholesale electricity in each bidding zone is established a day in advance in the day-ahead market. The optimization algorithm EUPHEMIA plays a critical role in this process by calculating the hourly system and zonal spot prices implicitly by the optimal power flow and dispatch of power plants based on the aggregated supply- and demand bids from market participants. The system spot price signals the theoretical price with no transmission constraints, while zonal prices result from congestion management between price areas, constrained by their inter-zonal transmission capacity, to signal scarcity. Adjustments to discrepancies in supply and demand are subsequently addressed in the intraday market and through ancillary services provided by Transmission System Operators (TSOs).
+
+Norwegian Market Dynamics
+In Norway, the energy mix consists primarily of dispatchable hydropower plants with low marginal costs, of which the export of power generally correlates with the importation of higher prices from other European markets. Conversely, power import correlates with low precipitation and abundant wind-generated electricity in northern Europe, produced at near-zero marginal costs, which tends to decrease Norwegian power prices. However, in periods of low water values, and renewables cannot meet demand, prices tend to increase as more expensive, dispatchable fossil-fueled generation is required to cover the shortfall.
+
+Consumer Impact and Future Outlook
+In recent years, these market dynamics have led to an incremental increase in energy costs for Norwegian consumers. Meanwhile, power producers benefit from enhanced market coupling as profit margins proportionately increase as wholesale electricity prices surge. With intensifying global efforts to phase out fossil fuels, the demand for renewable energy in Europe is expected to continue its upward trajectory. The future pricing landscape for electricity will likely be influenced by the marginal costs of available energy technologies needed to satisfy demand, coupled with the cross-border exchange capacities necessary to transport electricity effectively. As a result, investments in onshore and offshore wind power are increasing, and market mechanisms indicate that an increase in the capacity of wind power plants will positively affect power prices, assuming other variables remain constant. Nonetheless, the complex interdependencies introduced by cross-border energy trading, combined with the variability of renewable energy generation, highlight the challenges in forecasting future electricity prices accurately.
+
 Research question:
 
-What are the drivers for over seas exchange from Norway, and how will the future exchange look taking into account different fundamental changes in Norwegian generation and consumption, and variable renewable energy in northern continental Europe and UK.  
-
+What are the drivers for over seas exchange from Norway, and how will the future exchange look taking into account different fundamental changes in Norwegian generation and consumption, and variable renewable energy in northern continental Europe and UK.
 
 
 ```{r, warning = FALSE, message = FALSE}
