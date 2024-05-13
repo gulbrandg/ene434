@@ -334,7 +334,6 @@ df %>%
   geom_line(aes(x = date, y = exchange, color = "exchange"))
 ```
 
-
 Forecast exchange
 
 ```{r}
@@ -345,7 +344,10 @@ cap <- tibble(area = c("DE", "DK", "NL", "UK"),
 
 DATE_RANGE <- seq(as.Date(CUT_OFF), as.Date("2029-12-31"), by = "day")
 
-N_DAYS <- 
+N_DAYS <- length(DATE_RANGE)
+
+load_inc <- (seq(1:N_DAYS) / N_DAYS * 0.1) + 1
+vrep_inc <- (seq(1:N_DAYS) / N_DAYS * 0.5) + 1
 
 ```
 
@@ -369,9 +371,9 @@ draw_vrep <- function(a, m) {
 } 
 ```
 
-We also need to synthesize the future co 
+We also need to synthesize the future load.  
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 load_data <- df %>% 
   group_by(date) %>% 
   summarise(load = first(load)) %>% 
@@ -388,27 +390,46 @@ load_model <-
 load_model %>% report()
 load_model %>% gg_tsresiduals()
 
-load_model %>% 
-  forecast(h = 1000) %>% 
-  autoplot(load_data)
+future_load <-
+  load_model %>% 
+  forecast(h = N_DAYS) %>% 
+  rename(steady_load = .mean) %>% 
+  mutate(increasing_load = steady_load * load_inc) %>% 
+  select(date, steady_load, increasing_load)
+
+future_load %>% 
+  ggplot() +
+  geom_line(aes(x = date, y = steady_load, color = "steady load")) + 
+  geom_line(aes(x = date, y = increasing_load, color = "increasing load")) +
+  labs(x = "Date", y = "Load", title = "Increasing and steady load to 2030")
+
 ```
 
 
 
 ```{r}
 
-create_dataset_area <- function(a, from, s) {
+create_dataset_area <- function(a) {
+  from_date <- cap %>% 
+    filter(area == a) %>% 
+    .$from_date
+  
   old_df <-
     df %>% 
     filter(area == a) %>% 
-    filter(date >= as.Date(from)) %>% 
-    select(date, area, exchange, vrep)
+    filter(date >= as.Date(from_date)) %>% 
+    select(date, area, exchange, vrep, load) %>% 
+    mutate(increasing_vrep = NA,
+           increasing_load = NA)
   
   new_df <- 
-    tibble(date = seq(as.Date(CUT_OFF), as.Date("2025-12-31"), by = "day"),
+    tibble(date = DATE_RANGE,
            area = a,
            exchange = NA,
-           vrep = unlist(map2(a, month(date), draw_vrep)) * s)  
+           vrep = unlist(map2(a, month(date), draw_vrep)),
+           increasing_vrep = unlist(map2(a, month(date), draw_vrep)) * vrep_inc,
+           load = future_load$steady_load,
+           increasing_load = future_load$increasing_load)
 
   return(
     rbind(old_df, new_df) %>% 
@@ -421,7 +442,7 @@ create_dataset_area <- function(a, from, s) {
 
 ```{r}
 
-forecast_exchange <- function(a, vrep_coeff) {
+forecast_exchange <- function(a) {
   import_cap <- cap %>% 
     filter(area == a) %>% 
     .$import_cap
@@ -430,11 +451,7 @@ forecast_exchange <- function(a, vrep_coeff) {
     filter(area == a) %>% 
     .$export_cap
   
-  from_date <- cap %>% 
-    filter(area == a) %>% 
-    .$from_date
-  
-  data <- create_dataset_area(a, from_date, vrep_coeff)
+  data <- create_dataset_area(a)
   
   data_fit <- data %>% 
     filter(date < as.Date(CUT_OFF))
@@ -442,46 +459,64 @@ forecast_exchange <- function(a, vrep_coeff) {
   data_pred <- data %>% 
     filter(date >= as.Date(CUT_OFF))
   
-
   model <- 
     data_fit %>% 
     fill_gaps() %>%
-    model(mod = ARIMA(exchange ~ vrep))
+    model(mod = ARIMA(exchange ~ vrep + load + fourier(period = 7, K = 3)))
   
   model %>% 
     gg_tsresiduals() %>% 
     print()
   
-  pred <- 
+  # Scenario 1: steady vrep and steady load
+  pred1 <- 
     model %>% 
     forecast(., new_data = data_pred) %>% 
-    mutate(.mean = unlist(map2(.mean, rep(import_cap, 610), min))) %>% 
-    mutate(.mean = unlist(map2(.mean, rep(export_cap, 610), max))) 
-    
-  pred %>% autoplot(data_fit) %>% 
-    print()
+    mutate(s1 = unlist(map2(.mean, rep(import_cap, N_DAYS), min))) %>% 
+    mutate(s1 = unlist(map2(s1, rep(export_cap, N_DAYS), max))) 
   
-  return(
-    pred %>% 
-      as_tibble()
-    )
+  # Scenario 2: Increasing vrep and steady load
+  pred2 <- 
+    model %>% 
+    forecast(., new_data = (data_pred %>% mutate(vrep = increasing_vrep))) %>% 
+    mutate(f = unlist(map2(.mean, rep(import_cap, N_DAYS), min))) %>% 
+    mutate(f = unlist(map2(f, rep(export_cap, N_DAYS), max)))
+
+  # Scenario 3: Steady vrep and increasing load
+  pred3 <- 
+    model %>% 
+    forecast(., new_data = (data_pred %>% mutate(load = increasing_load))) %>% 
+    mutate(f = unlist(map2(.mean, rep(import_cap, N_DAYS), min))) %>% 
+    mutate(f = unlist(map2(f, rep(export_cap, N_DAYS), max)))
+
+  # Scenario 4: Increasing vrep and increasing load
+  pred4 <- 
+    model %>% 
+    forecast(., new_data = (data_pred %>% mutate(vrep = increasing_vrep, load = increasing_load))) %>% 
+    mutate(f = unlist(map2(.mean, rep(import_cap, N_DAYS), min))) %>% 
+    mutate(f = unlist(map2(f, rep(export_cap, N_DAYS), max)))
+  
+  pred <- pred1 %>% 
+    mutate(s2 = pred2$f,
+           s3 = pred3$f,
+           s4 = pred4$f)
+
+  return(pred %>% 
+           as_tibble() %>% 
+           select(date, area, s1, s2, s3, s4))
 }
 
-scen1 <- map2(areas, 1, forecast_exchange) %>% 
-  bind_rows() %>% 
-  group_by(date) %>% 
-  summarise(exchange = sum(.mean))
 
-scen2 <- map2(areas, 1.25, forecast_exchange) %>% 
+exchange_forecast <- map(areas, forecast_exchange) %>% 
   bind_rows() %>% 
   group_by(date) %>% 
-  summarise(exchange = sum(.mean))
-
-scen3 <- map2(areas, 1.5, forecast_exchange) %>% 
-  bind_rows() %>% 
-  group_by(date) %>% 
-  summarise(exchange = sum(.mean))
+  summarise(s1 = sum(s1),
+            s2 = sum(s2),
+            s3 = sum(s3),
+            s4 = sum(s4))
 ```
+
+
 Price forecast
 
 ```{r}
@@ -490,25 +525,13 @@ pdf <- df %>%
   summarise(price = first(price),
             exchange = sum(exchange),
             load = first(load)) %>% 
-  filter(date >= as.Date("2023-01-01")) %>% 
-  tsibble(index = date) #%>% 
-  #mutate(price = difference(price),
-  #       exchange = difference(exchange),
-  #       load = difference(load))
+  filter(date >= as.Date("2022-01-01")) %>% 
+  tsibble(index = date)
   
-
-load_profile <- pdf %>% 
-  filter(date >= as.Date("2022-05-01")) %>% 
-  filter(date < as.Date("2024-01-01")) %>% 
-  select(date, load)
-
 future <- 
-  tibble(date = seq(as.Date(CUT_OFF), as.Date("2025-12-31"), by = "day"),
-         price = NA,
-         scen1 = scen1$exchange,
-         scen2 = scen2$exchange,
-         scen3 = scen3$exchange,
-         load = load_profile$load) %>% 
+  exchange_forecast %>% 
+  mutate(steady_load = future_load$steady_load,
+         increasing_load = future_load$increasing_load) %>% 
   tsibble(index = date)
 ```
 
@@ -516,7 +539,8 @@ future <-
 model <- 
   pdf %>% 
   fill_gaps() %>%
-  model(mod = ARIMA(price ~ 0 + exchange + load))
+  model(mod = ARIMA(price ~ exchange + load + 
+                      fourier(period = 7, K = 3)))
 
 model %>% 
   report()
@@ -526,44 +550,45 @@ model %>%
 
 pred1 <- 
   model %>% 
-  forecast(., new_data = (future %>% mutate(exchange = scen1))) 
+  forecast(., new_data = (future %>% mutate(exchange = s1, load = steady_load)))
+
+pred1 %>% 
+  autoplot(pdf)
 
 pred2 <- 
   model %>% 
-  forecast(., new_data = (future %>% mutate(exchange = scen2))) 
+  forecast(., new_data = (future %>% mutate(exchange = s2, load = steady_load))) 
+
+pred2 %>% 
+  autoplot(pdf)
 
 pred3 <- 
   model %>% 
-  forecast(., new_data = (future %>% mutate(exchange = scen3))) 
-  
-pred1 %>% autoplot(pdf) 
+  forecast(., new_data = (future %>% mutate(exchange = s3, load = increasing_load))) 
 
-pred2 %>% autoplot(pdf)
+pred3 %>% 
+  autoplot(pdf)
 
-pred3 %>% autoplot(pdf)
+pred4 <- 
+  model %>% 
+  forecast(., new_data = (future %>% mutate(exchange = s4, load = increasing_load))) 
 
-pred1 %>% 
-  ggplot() +
-  geom_line(aes(x = date, y = .mean, color = "vrep_coeff = 1")) +
-  geom_line(aes(x = date, y = pred2$.mean, color = "vrep_coeff = 1.25")) +
-  geom_line(aes(x = date, y = pred3$.mean, color = "vrep_coeff = 1.5"))
+pred4 %>% 
+  autoplot(pdf)
 
-mean(pred1$.mean)
-mean((pred1$.mean - pred2$.mean) / pred1$.mean) * 100
-mean((pred1$.mean - pred3$.mean) / pred1$.mean) * 100
 ```
 
 
 ```{r}
-adf.test(difference(pdf$load)[2:length(difference(pdf$load))])
+tibble(Scenario = c("Scenario 1", "Scenario 2", "Scenario 3", "Scenario 4"),
+       Mean = c(mean(pred1$.mean), mean(pred2$.mean), mean(pred3$.mean), mean(pred4$.mean)),
+       "% diff from Scenario 1" = 
+         c(
+           paste0(round(abs(mean(pred1$.mean) - mean(pred1$.mean)) / mean(pred1$.mean) * 100, 2), "%"), 
+           paste0(round(abs(mean(pred1$.mean) - mean(pred2$.mean)) / mean(pred1$.mean) * 100, 2), "%"), 
+           paste0(round(abs(mean(pred1$.mean) - mean(pred3$.mean)) / mean(pred1$.mean) * 100, 2), "%"), 
+           paste0(round(abs(mean(pred1$.mean) - mean(pred4$.mean)) / mean(pred1$.mean) * 100, 2), "%")))
 
 
-
-unitroot_ndiffs(pdf$load)
-
-
-pdf %>% 
-  ggplot() +
-  geom_line(aes(x = date, y = load))
 ```
 
