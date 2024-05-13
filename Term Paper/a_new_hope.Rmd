@@ -25,6 +25,7 @@ library(tsibble)
 library(fpp3)
 library(tseries)
 library(forecast)
+library(pander)
 ```
 
 ```{r}
@@ -43,9 +44,9 @@ UK_conn <- "2021-10-01"
 
 cap <- tibble(area = c("DE", "DK", "NL", "UK"),
               import_cap = c(1425, 1639, 730, 1330),
-              export_cap = c(-1407, -1658, -706, -1450))
+              export_cap = c(-1407, -1658, -706, -1450),
+              from_date = c("2021-01-01", "2021-01-01", "2023-01-01", "2022-01-01"))
 ```
-
 
 
 
@@ -199,6 +200,110 @@ do.call(cbind, lapply(x, is.nan))
 df[is.nan(df)] <- 0
 ```
 
+What drives exchange?
+
+```{r, warning = FALSE, message = FALSE}
+Facet_gen <- df %>% 
+  select(date, exchange, area, gen) %>% 
+  filter(exchange != 0) %>% 
+  ggplot(aes(x = gen, y = exchange, color = date)) +
+  geom_point() +
+  facet_wrap(~ area, scales = 'free_y')+
+  geom_smooth(method = "lm", color = "red") +
+  labs(title = "Title XXXX", x = "Generation", y = "Exchange", color = "Date") + 
+  theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
+
+Facet_vrep <- df %>% 
+  select(date, exchange, area, vrep) %>% 
+  filter(exchange != 0) %>% 
+  ggplot(aes(x = vrep, y = exchange, color = date)) +
+  geom_point() +
+  facet_wrap(~ area, scales = 'free')+
+  geom_smooth(method = "lm", color = "red") +
+  labs(title = "Title XXXX", x = "VREP", y = "Exchange", color = "Date") + 
+  theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
+
+Facet_load <- df %>% 
+  select(date, exchange, area, load) %>% 
+  filter(exchange != 0) %>% 
+  ggplot(aes(x = load, y = exchange, color = date)) +
+  geom_point() +
+  facet_wrap(~ area, scales = 'free')+
+  geom_smooth(method = "lm", color = "red") +
+  labs(title = "Title XXXX", x = "Load", y = "Exchange", color = "Date") + 
+  theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
+
+
+Facet_gen
+Facet_vrep
+Facet_load
+
+```
+
+Da
+
+```{r}
+get_coeff_gen <- function(a) {
+  df %>% 
+    select(date, exchange, area, gen) %>% 
+    filter(exchange != 0) %>% 
+    filter(area == a) %>% 
+    lm(data = ., formula = exchange ~ gen) %>% 
+    summary(.) %>% 
+    .$coefficients %>% 
+    as_tibble() %>% 
+    .[2,c("Estimate", "Pr(>|t|)")] %>%
+    `colnames<-`(c("coeff", "p_value")) %>% 
+    mutate(p_value = ifelse(p_value > 0.1, "-", 
+                     ifelse(p_value > 0.05, "*", 
+                     ifelse(p_value > 0.01, "**", "***")))) %>% 
+    mutate(coeff = paste0(round(coeff, 3), " ", p_value)) %>% 
+    .$coeff
+}
+
+get_coeff_vrep <- function(a) {
+  df %>% 
+    select(date, exchange, area, vrep) %>% 
+    filter(exchange != 0) %>% 
+    filter(area == a) %>% 
+    lm(data = ., formula = exchange ~ vrep) %>% 
+    summary(.) %>% 
+    .$coefficients %>% 
+    as_tibble() %>% 
+    .[2,c("Estimate", "Pr(>|t|)")] %>%
+    `colnames<-`(c("coeff", "p_value")) %>% 
+    mutate(p_value = ifelse(p_value > 0.1, "-", 
+                     ifelse(p_value > 0.05, "*", 
+                     ifelse(p_value > 0.01, "**", "***")))) %>% 
+    mutate(coeff = paste0(round(coeff, 3), " ", p_value)) %>% 
+    .$coeff
+}
+
+get_coeff_load <- function(a) {
+  df %>% 
+    select(date, exchange, area, load) %>% 
+    filter(exchange != 0) %>% 
+    filter(area == a) %>% 
+    lm(data = ., formula = exchange ~ load) %>% 
+    summary(.) %>% 
+    .$coefficients %>% 
+    as_tibble() %>% 
+    .[2,c("Estimate", "Pr(>|t|)")] %>%
+    `colnames<-`(c("coeff", "p_value")) %>% 
+    mutate(p_value = ifelse(p_value > 0.1, "-", 
+                     ifelse(p_value > 0.05, "*", 
+                     ifelse(p_value > 0.01, "**", "***")))) %>% 
+    mutate(coeff = paste0(round(coeff, 3), " ", p_value)) %>% 
+    .$coeff
+}
+
+tibble(area = areas) %>% 
+  mutate(gen = unlist(map(areas, get_coeff_gen)),
+         vrep = unlist(map(areas, get_coeff_vrep)),
+         load = unlist(map(areas, get_coeff_gen)))
+```
+
+
 
 ```{r}
 res <- map(c("SE", "FI"), gather_cross_flow) %>%
@@ -225,8 +330,10 @@ df %>%
 
 Forecast exchange
 
+Firstly, we need to synthesize variable renewable production (VREP) in our data. This is done by taking data from 2023 and creating a pool of values for each month and area. Then for a single date, a future value is drawn from this pool given a month and area, and is then multiplied by a random factor [0.9, 1.1] to essentially simulate the uncertainty of wind and solar for a given day.  
+
 ```{r}
-# Draw random vrep from month and area from 2023
+# Synthesize vrep
 vrep_area_month <-
   df %>% 
   filter(date >= as.Date("2023-01-01")) %>% 
@@ -242,6 +349,31 @@ draw_vrep <- function(a, m) {
     sample(1, replace = TRUE) * runif(1, min = 0.9, max = 1.1)
 } 
 ```
+
+We also need to synthesize the future co 
+
+```{r}
+load_data <- df %>% 
+  group_by(date) %>% 
+  summarise(load = first(load)) %>% 
+  tsibble(index = date) 
+
+load_model <- 
+  load_data %>% 
+  model(mod = ARIMA(load ~ pdq(3,0,1) + PDQ(0,0,0) +
+                      fourier(period = 365, K = 10) +
+                      fourier(period = 7, K = 3)
+                    )
+  )
+
+load_model %>% report()
+load_model %>% gg_tsresiduals()
+
+load_model %>% 
+  forecast(h = 1000) %>% 
+  autoplot(load_data)
+```
+
 
 
 ```{r}
@@ -271,12 +403,6 @@ create_dataset_area <- function(a, from, s) {
 ```{r}
 
 forecast_exchange <- function(a, vrep_coeff) {
-  data <- create_dataset_area(a, "2022-01-01", vrep_coeff)
-  data_fit <- data %>% 
-    filter(date < as.Date(CUT_OFF))
-  data_pred <- data %>% 
-    filter(date >= as.Date(CUT_OFF))
-  
   import_cap <- cap %>% 
     filter(area == a) %>% 
     .$import_cap
@@ -285,6 +411,19 @@ forecast_exchange <- function(a, vrep_coeff) {
     filter(area == a) %>% 
     .$export_cap
   
+  from_date <- cap %>% 
+    filter(area == a) %>% 
+    .$from_date
+  
+  data <- create_dataset_area(a, from_date, vrep_coeff)
+  
+  data_fit <- data %>% 
+    filter(date < as.Date(CUT_OFF))
+  
+  data_pred <- data %>% 
+    filter(date >= as.Date(CUT_OFF))
+  
+
   model <- 
     data_fit %>% 
     fill_gaps() %>%
