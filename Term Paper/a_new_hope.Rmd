@@ -213,9 +213,9 @@ price_df <-
   df %>% 
   group_by(date) %>% 
   summarise(price = first(price),
-            exchange = sum(exchange),
             gen = first(gen),
-            load = first(load)) %>% 
+            load = first(load),
+            exchange = sum(exchange)) %>% 
   pivot_longer(cols = c("exchange", "gen", "load"))
 
 price_df %>% 
@@ -228,6 +228,11 @@ price_df %>%
   theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
 
 ```
+
+Plotting exchange, generation and consumption to explain price, we see that there are different and complex relations. First of all data points seem to form clusters based on their date, which makes sense as different periods since 2018 have had different price levels, with some periods being abnormally high. 
+
+For exchange it is difficult to pinpoint any exact relation to price. High export (negative exchange) and import (positive exchange) seems to give higher prices then small export and small import. Additionally, different time periods for when the exchange occurred seem to display different relations to price. The difficulty of determining this relationship calls for more complex methods, which we will later
+
 
 
 ## Descriptive analysis of exchange
@@ -343,25 +348,6 @@ tibble(area = areas) %>%
   pander()
 ```
 In the above the table the numerical results for the regression are summarized. We find that our intuition was correct, where ...
-
-
-```{r, warning=FALSE, message=FALSE}
-res <- map(c("SE", "FI"), gather_cross_flow) %>%
-  bind_rows() %>% 
-  group_by(date) %>% 
-  summarise(exchange = sum(exchange))
-
-df %>% 
-  group_by(date) %>% 
-  summarise(exchange = sum(exchange),
-            gen = first(gen),
-            load = first(load)) %>% 
-  mutate(exchange = exchange + res$exchange,
-         tot = gen + exchange - load) %>% 
-  ggplot() +
-  geom_line(aes(x = date, y = tot, color = "tot")) +
-  geom_line(aes(x = date, y = load, color = "load"))
-```
 
 ## Forecast exchange
 
@@ -639,7 +625,7 @@ pred4 %>%
   labs(title = "Projection for Scenario 4", x = "Date", y = "Price in €/MWh")
 
 ```
-Looking at the projections for the different scenarios they all share a similar seasonality, where the prices are lower in the summer months and higher during the winter months. As time elapses, the uncertainty of the projection increases, an expected result due to limited explanatory power of the model. This is also emphasized by the residual plot above. It should also be noted that at the model does not differentiate between negative and positive prices, and finds each as likely. Domain knowledge on electricity markets does not support this notion. Negative prices are a relatively rare occurrence and is very unlikely to dip far below zero. However, our goal is to compare general price levels of different scenarios, rather than trying to giving an exact forecast, and this model will in this regard be suitable. 
+Looking at the projections for the different scenarios they all share a similar seasonality, where the prices are lower in the summer months and higher during the winter months. As time elapses, the uncertainty of the projection increases, an expected result due to limited explanatory power of the model. This is also emphasized by the residual plot above. It should also be noted that the model does not differentiate between negative and positive prices, and finds each as likely. Domain knowledge on electricity markets does not support this notion. Negative prices are a relatively rare occurrence and is very unlikely to dip far below zero. However, our goal is to compare general price levels of different scenarios, rather than trying to giving an exact forecast, and this model will in this regard be suitable. 
 
 ```{r, warning=FALSE, message=FALSE}
 tibble(Scenario = c("Scenario 1", "Scenario 2", "Scenario 3", "Scenario 4"),
@@ -665,6 +651,8 @@ In the table above the calculated mean and standard deviation for each scenario 
 
 Scenario 2, where an 50% increase in variable renewable energy production and steady consumption is modeled, has a 6.49% lower price level than the base scenario. This results coincides with our intuition. If there is a higher production in the overseas countries, this production will partly go to Norway, shifting the supply curve positively, thus reducing the price level. The standard deviation, which we interpret as price volatility, is somewhat lower. This is not what we would expect, as an increase in variable renewable energy would induce higher volatility in the overseas production, which again would transfer to the supply curve in Norway. This might be because of the bottlenecks of transmission, or simply that the data is too aggregated on a daily level, and that we would actually find such a result in an hourly resolution. Our rather simplified modelling assumptions might also be the cause of this. 
 
-Scenario 3, where steady variable renewable energy production and an 10% increasing consumption is modeled, there is a 10.07% increase in the price level compared to Scenario 1. This aligns with our intuition, where a higher consumption positively shifts the demand curve, resulting in higher prices. Here the standard deviation is also higher than Scenario 1, which also makes sense as the positive shift in demand generally increases the prices over time. 
+Scenario 3, where steady variable renewable energy production and an 10% increasing consumption is modeled, there is a 10.07% increase in the price level compared to Scenario 1. This aligns with our intuition, where a higher consumption positively shifts the demand curve, resulting in higher prices. Here the standard deviation is also higher than Scenario 1, which also makes sense as the positive shift in demand generally increases the price. 
 
-Scenario 4, where an 50% increase in variable renewable energy production and an 10% increasing consumption is modeled, gives a 3.82% increase in the price level compared to Scenario 1. After examining Scenario 
+Scenario 4, where an 50% increase in variable renewable energy production and an 10% increasing consumption is modeled, gives an 3.82% increase in the price level compared to Scenario 1. After examining Scenario 2 and 3 this seems reasonable, and indicates that the effect of an increase of 10% in consumption is larger than the effect of an increase of 50% in variable renewable energy. The standard deviation is lower than Scenario 3 but still higher than Scenario 1, which aligns with what we found in the comparison of means. 
+
+Overall it seems like the effect of an increased consumption is larger than the effect of an increased variable renewable energy production in overseas countries. This is an interesting finding, especially considering that the increase in variable renewable energy production was five-fold compared to the increase in consumption. A likely reason for this is of course the bottlenecks introduced by the oversea cable connections in the system. This is a known reason for price difference between zones, which we also have taken into account into our modelling approach. Therefore, our analysis indicates that the capacities of the connections should be expanded along with increasing variable renewable production in overseas countries, if the goal is to reduce the spot price level of electricity in Norway.
