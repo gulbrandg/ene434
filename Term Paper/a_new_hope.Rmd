@@ -9,26 +9,6 @@ output: word_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-Introduction
-The European energy landscape is undergoing a significant transformation towards sustainable solutions, propelled by increasing demands for renewable resources and enhanced concerns regarding energy security. This shift has affected the power market dynamics in Norway due to the market coupling and transmission interconnections with Europe. The market coupling and interconnections facilitate the exchange of power to and from Norway, thereby enhancing grid stability, bolstering regional energy security, and ensuring the socially optimum allocation of scarce resources.
-
-Impact of Geopolitical Events
-The recent energy crisis, exacerbated by geopolitical conflicts such as the Russian invasion of Ukraine in early 2022, has underscored the fragility of European energy supplies. This event led to a significant reduction in the supply of natural gas, a pivotal energy source for many European countries, thereby accelerating investment in variable renewable energy (VRE) sources such as wind and solar power. As the proportion of VRE in the energy mix increases, power prices have experienced marked volatility, primarily driven by the variability in supply-demand dynamics and the constraints of transmission capacities. 
-
-Market Mechanisms and Pricing
-In Norway, the hourly spot price for wholesale electricity in each bidding zone is established a day in advance in the day-ahead market. The optimization algorithm EUPHEMIA plays a critical role in this process by calculating the hourly system and zonal spot prices implicitly by the optimal power flow and dispatch of power plants based on the aggregated supply- and demand bids from market participants. The system spot price signals the theoretical price with no transmission constraints, while zonal prices result from congestion management between price areas, constrained by their inter-zonal transmission capacity, to signal scarcity. Adjustments to discrepancies in supply and demand are subsequently addressed in the intraday market and through ancillary services provided by Transmission System Operators (TSOs).
-
-Norwegian Market Dynamics
-In Norway, the energy mix consists primarily of dispatchable hydropower plants with low marginal costs, of which the export of power generally correlates with the importation of higher prices from other European markets. Conversely, power import correlates with low precipitation and abundant wind-generated electricity in northern Europe, produced at near-zero marginal costs, which tends to decrease Norwegian power prices. However, in periods of low water values, and renewables cannot meet demand, prices tend to increase as more expensive, dispatchable fossil-fueled generation is required to cover the shortfall.
-
-Consumer Impact and Future Outlook
-In recent years, these market dynamics have led to an incremental increase in energy costs for Norwegian consumers. Meanwhile, power producers benefit from enhanced market coupling as profit margins proportionately increase as wholesale electricity prices surge. With intensifying global efforts to phase out fossil fuels, the demand for renewable energy in Europe is expected to continue its upward trajectory. The future pricing landscape for electricity will likely be influenced by the marginal costs of available energy technologies needed to satisfy demand, coupled with the cross-border exchange capacities necessary to transport electricity effectively. As a result, investments in onshore and offshore wind power are increasing, and market mechanisms indicate that an increase in the capacity of wind power plants will positively affect power prices, assuming other variables remain constant. Nonetheless, the complex interdependencies introduced by cross-border energy trading, combined with the variability of renewable energy generation, highlight the challenges in forecasting future electricity prices accurately.
-
-Research question:
-
-What are the drivers for over seas exchange from Norway, and how will the future exchange look taking into account different fundamental changes in Norwegian generation and consumption, and variable renewable energy in northern continental Europe and UK.
-
-
 ```{r, warning = FALSE, message = FALSE}
 library(tidyverse)
 library(zoo)
@@ -42,7 +22,15 @@ library(forecast)
 library(pander)
 ```
 
-```{r}
+## Collecting data 
+
+In this section we will detail the sources from which our data is gathered, and the methods used to load and wrangle the data. In the analysis we use data on the historical day-ahead spot prices for the five Norwegian bidding zones, load and generation in Norway, in addition to cross-border exchange and variable renewable energy generation in interconnected zones in the UK, Denmark, Germany and the Netherlands. All data is retrieved in an hourly resolution for the period between January 2018 and May 2024. Data for all countries except the UK is retrieved from ENTSO-E’s Transparency Platform ​(Transparency Platform, 2024). Due to Brexit, historical UK was no longer offered by ENTSO-E and is instead retrieved from ELEXON BSC’s Insight Solutions (Insights Solution, 2024).  
+
+Spot prices are measured in units of Euro/MWh and retrieved for all five bidding zones: NO1, NO2, NO3, NO4 and NO5. All other data is measured in power units of MW. Data on load and generation of power are retrieved separately for all five bidding zones. Meanwhile, data on cross-border exchange and variable renewable energy generation is retrieved for interconnectors in the North Sea. Due to the scope of this paper, we have chosen not to include the interconnectors to Sweden and Finland. We acknowledge that this exclusion is a potential weakness of our analysis. 
+
+We first establish global variables which will be used to denominate cross-border areas (bidding zones) and Norwegian bidding zones. In addition, we set the cut-off date applied to all the loaded datasets. All data collected has a common start date of 1. January 2018. 
+
+```{r, warning=FALSE, message=FALSE}
 # Where our data ends
 CUT_OFF <- "2024-05-01"
 
@@ -50,32 +38,28 @@ CUT_OFF <- "2024-05-01"
 areas <- c("DE", "DK", "NL", "UK")
 
 # Bidding zones for Norwegian day-ahead electricity prices
-Bidding_zone <- c("NO1", "NO2", "NO3", "NO4", "NO5")
-
-# Dates for when connections were fully operational
-DE_conn <- "2021-01-01"
-UK_conn <- "2021-10-01"
+bidding_zone <- c("NO1", "NO2", "NO3", "NO4", "NO5")
 ```
 
+Datasets downloaded from ENTSO-E are only available for one year at a time. We write functions for each variable which load, wrangle and clean the 7 files for each year and bidding zone as inputs. The functions aggregate the hourly resolution to mean prices by date. The mean prices in each bidding zones in Norway is aggregated into a single mean price for each date for simplicity. Subsequent functions gather and consolidate the yearly data for each variable. Negative values for exchange signify export of Norwegian generation. Conversely, positive exchange values signify import.  
 
-
-```{r}
+```{r, warning=FALSE, message=FALSE}
 # Prices
-dayAheadPrices <- function(Bidding_zone, year) {
-  read_csv(paste0("data/Norwegian_Day_Ahead_prices/DA_price_", Bidding_zone, "_", year, ".csv"),show_col_types = FALSE) %>% 
+dayAheadPrices <- function(bidding_zone, year) {
+  read_csv(paste0("data/Norwegian_Day_Ahead_prices/DA_price_", bidding_zone, "_", year, ".csv"),show_col_types = FALSE) %>% 
     .[,c(1,2)] %>% 
      `colnames<-`(c("date", "price")) %>% 
     separate(date, sep="-", into=c("date", NULL)) %>% 
     mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
     mutate(price = as.double(price),
-           Bidding_zone = Bidding_zone) %>%
+           bidding_zone = bidding_zone) %>%
     group_by(date) %>%
     filter(date < as.Date(CUT_OFF)) %>%
-    summarise(price = mean(price, na.rm = TRUE), Bidding_zone = unique(Bidding_zone))
+    summarise(price = mean(price, na.rm = TRUE), bidding_zone = unique(bidding_zone))
 }
 
-gather_dayAheadPrices <- function(Bidding_zone) {
-  map2(rep(Bidding_zone, 7), c("2018":"2024"), dayAheadPrices) %>% 
+gather_dayAheadPrices <- function(bidding_zone) {
+  map2(rep(bidding_zone, 7), c("2018":"2024"), dayAheadPrices) %>% 
     bind_rows()
 }
 
@@ -173,11 +157,13 @@ gather_generation_area <- function(area) {
 }
 ```
 
+Data frames for each variable are loaded into memory and subsequently consolidated into the data frame df. There exist some NaN values in exchange due to maintenance which we set to 0. 
+
 ```{r, warning=FALSE, message=FALSE}
-# Gather data
+# Load data into memory
 
 # Prices
-price <- map(Bidding_zone, gather_dayAheadPrices) %>%
+price <- map(bidding_zone, gather_dayAheadPrices) %>%
   bind_rows() %>% 
   group_by(date) %>% 
   summarise(price = mean(price, na.rm = TRUE))
@@ -197,7 +183,7 @@ vrep <- map(areas, gather_generation_area) %>%
   bind_rows()
 ```
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 df <- exchange %>% 
   inner_join(., vrep, by = c("date", "area")) %>% 
   inner_join(., gen_NO[,c(1,2)], by = c("date")) %>% 
@@ -209,7 +195,17 @@ do.call(cbind, lapply(x, is.nan))
 df[is.nan(df)] <- 0
 ```
 
-What drives exchange?
+## Descriptive analysis
+
+To create a price-model using exchange, load and vrep as explanatory variables, we need to synthesize future data for these variables. Additionally, the model must account for the maximum transmission capacity of each interconnector, ensuring that exchange cannot exceed the physical constraints of transmission.  
+
+Descriptive analysis of the data will provide insight into the drivers for each variable, enabling us to synthesize scenarios of future data to be used in our final price-model. Below is the code for the scatterplots with linear regression lines for the explanatory variables, facet wrapped by area. 
+
+The scatterplots will enable us to better understand how the correlation between one explanatory variable and the other for each area.  
+
+## Descriptive analysis of price
+
+## Descriptive analysis of exchange
 
 ```{r, warning = FALSE, message = FALSE}
 Facet_gen <- df %>% 
@@ -241,17 +237,26 @@ Facet_load <- df %>%
   geom_smooth(method = "lm", color = "red") +
   labs(title = "Title XXXX", x = "Load", y = "Exchange", color = "Date") + 
   theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
-
-
-Facet_gen
-Facet_vrep
-Facet_load
-
 ```
 
-Da
+```{r, warning=FALSE, message=FALSE}
+Facet_gen
+```
+
+The plot above indicates a negative correlation between exchange and generation in NO across all areas, meaning an increase in export is correlated with an increase in NO generation. The incline of the regression lines suggests the degree of correlation is similar in size(forholdet?). NO appears to be a net exporter to all areas, although this is less evident for DK.  Norwegian import when domestic generation is low seems to be more prominent for DE and DK, than NL and UK. This might suggest that Norwegian power producers are more capable of adjusting generation to power imported from DE and DK, or that power generation in DK is more prevalent during periods of low power generation in Norway, possibly due to high water values.  
+```{r, warning=FALSE, message=FALSE}
+Facet_vrep
+```
+
+The plot above indicates a varying degree of positive correlation between exchange and variable renewable energy production in border areas, showing a trend of import when vrep is available. However, this correlation is negligible for the UK. Conversely, DK and DE appear to have a linear relationship between exchange and vrep. This might suggest that vrep production is a driver for exchange between NO and these areas. This does not seem to be the case for UK where there is no incline.  
 
 ```{r}
+Facet_load
+```
+
+The plot above shows different correlations between exchange and load for bordering areas. Exchange to DE, DK and NL are positively correlated with NO load, while this relationship is opposite for the UK, exchange being is negatively correlated with load. The former suggest that with lower power consumption in Norway, power export increases. The latter might suggest that an increase in consumption of electricity in Norway relates to more export to the UK, however, there are some outliers to the right of the plot which might explain the slope of the regression line.  
+
+```{r, warning=FALSE, message=FALSE}
 get_coeff_gen <- function(a) {
   df %>% 
     select(date, exchange, area, gen) %>% 
@@ -309,12 +314,13 @@ get_coeff_load <- function(a) {
 tibble(area = areas) %>% 
   mutate(gen = unlist(map(areas, get_coeff_gen)),
          vrep = unlist(map(areas, get_coeff_vrep)),
-         load = unlist(map(areas, get_coeff_load)))
+         load = unlist(map(areas, get_coeff_load))) %>% 
+  pander()
 ```
+In the above the table the numerical results for the regression are summarized. We find that our intuition was correct, where ...
 
 
-
-```{r}
+```{r, warning=FALSE, message=FALSE}
 res <- map(c("SE", "FI"), gather_cross_flow) %>%
   bind_rows() %>% 
   group_by(date) %>% 
@@ -330,13 +336,15 @@ df %>%
          tot = gen + exchange - load) %>% 
   ggplot() +
   geom_line(aes(x = date, y = tot, color = "tot")) +
-  geom_line(aes(x = date, y = load, color = "load")) + 
-  geom_line(aes(x = date, y = exchange, color = "exchange"))
+  geom_line(aes(x = date, y = load, color = "load"))
 ```
 
-Forecast exchange
+## Forecast exchange
 
-```{r}
+Next, we want to forecast exchange between Norway and countries that are connected with an oversea cable. These include Germany (DE), Denmark (DK), the Netherlands (NL) and United Kingdom (UK). We first define capacity parameters on all cables using the historical maximum and minimum we find in the data. These coincide with capacities that are found online (source). Secondly, we define a date range which sets the timeline for the forecast. Lastly, we need to define how the increase in consumption and variable renewable energy will happen. Here we use a simple linear increase in both, such that the level at any given time will be the original level multiplied with the target level and percentage of the time elapsed to 2030.  To give an example for the variable renewable energy production, the first date (2024-05-01) in our forecast will be the level multiplied by 1.  The median date (2027-02-02) will be the level multiplied by 1.25, and the last date (2029-12-31) will be the level multiplied with 1.5. Thus, we model a 50% total increase in variable renewable energy production over the given forecast horizon.  
+
+
+```{r, warning=FALSE, message=FALSE}
 cap <- tibble(area = c("DE", "DK", "NL", "UK"),
               import_cap = c(1425, 1639, 730, 1330),
               export_cap = c(-1407, -1658, -706, -1450),
@@ -351,9 +359,11 @@ vrep_inc <- (seq(1:N_DAYS) / N_DAYS * 0.5) + 1
 
 ```
 
-Firstly, we need to synthesize variable renewable production (VREP) in our data. This is done by taking data from 2023 and creating a pool of values for each month and area. Then for a single date, a future value is drawn from this pool given a month and area, and is then multiplied by a random factor [0.9, 1.1] to essentially simulate the uncertainty of wind and solar for a given day.  
+Since we want to forecast the exchange with variable renewable energy production and consumption, we need to synthesis data for these variables in the forecast horizon.   
 
-```{r}
+We start by synthesizing variable renewable production. This is done by taking data from 2023 and creating a pool of values for each month and area. Then for a single date, a future value is drawn from this pool given a month and area, and is then multiplied by a random factor [0.9, 1.1] to essentially simulate the uncertainty of wind and solar for a given day. Doing it this way the idea is to keep monthly trends for future values, while also introducing uncertainty that is present in such a variable.  
+
+```{r, warning=FALSE, message=FALSE}
 # Synthesize vrep
 vrep_area_month <-
   df %>% 
@@ -371,7 +381,7 @@ draw_vrep <- function(a, m) {
 } 
 ```
 
-We also need to synthesize the future load.  
+We also need to synthesize the future consumption. We can do this using the same method as for the variable renewable energy production, but the seasonality would not be kept in a good way. Therefore, we instead synthesize the data by creating an ARIMA model with fourier terms to create more feasible data. Here a fourier term is added for yearly and weekly seasonality. The model also includes an AR(3) and MA(1), these parameters were found by looking at the residual plot and studying the AICc.    
 
 ```{r, warning=FALSE, message=FALSE}
 load_data <- df %>% 
@@ -387,7 +397,6 @@ load_model <-
                     )
   )
 
-load_model %>% report()
 load_model %>% gg_tsresiduals()
 
 future_load <-
@@ -405,9 +414,11 @@ future_load %>%
 
 ```
 
+The final model still has some residual peaks on the 21st, 23rd and 25th lag, but the residual histogram looks normally distributed. Another point here is that we do not necessarily want the model to exactly fit the data, but rather we want the forecast to look feasible. From the forecasted plot, we can see that this is indeed the case, and we accept the model.   
 
+Next, we define a function which creates a dataset for each exchange area. This dataset will include the historical data on the variable renewable production and consumption, and the scenarios for future variable renewable production and consumption, namely for steady and increasing states.
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 
 create_dataset_area <- function(a) {
   from_date <- cap %>% 
@@ -440,9 +451,11 @@ create_dataset_area <- function(a) {
 ```
 
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 
 forecast_exchange <- function(a) {
+  print(paste0("Exchange model for area: ", a))
+  
   import_cap <- cap %>% 
     filter(area == a) %>% 
     .$import_cap
@@ -515,11 +528,15 @@ exchange_forecast <- map(areas, forecast_exchange) %>%
             s3 = sum(s3),
             s4 = sum(s4))
 ```
+Here, one model is created for each area, as the relation between exchange and variable renewable energy production differs from area to area. The DE-model looks quite good with normally distributed residuals, but has some significant spikes. The DK-model has no significant spikes 
 
+## Price projection
 
-Price forecast
+After synthesizing exchange and consumption data we can create our price model. The model will be fitted on historical exchange and consumption, and project the Norwegian electricity price for each defined scenario. The model will only be fitted on data from 2022-01-01 until 2024-05-01. This is because we do not want to include the unprecedented prices of 2021, as we do not believe that these represent the future level of Norwegian electricity prices.
 
-```{r}
+First, we create fitting data with the historical values of the price, exchange and consumption. Then we create a data frame containing exchange and consumption values for all scenarios. 
+
+```{r, warning=FALSE, message=FALSE}
 pdf <- df %>% 
   group_by(date) %>% 
   summarise(price = first(price),
@@ -535,60 +552,91 @@ future <-
   tsibble(index = date)
 ```
 
-```{r}
+Next we define our model using the same principles as before. We want to have as few spikes in the ACF-plot as possible, while the residuals should be normally distributed. We account for seasonality by adding fourirer terms. After some testing we find a model with MA(3), and three different fourier terms.    
+
+```{r, warning=FALSE, message=FALSE}
 model <- 
   pdf %>% 
   fill_gaps() %>%
-  model(mod = ARIMA(price ~ exchange + load + 
-                      fourier(period = 7, K = 3)))
+  model(mod = ARIMA(price ~ exchange + load + pdq(0,1,3) + PDQ(0,0,0) +
+                      fourier(period = 6, K = 2) +
+                      fourier(period = 7, K = 1) +
+                      fourier(period = 9, K = 4)))
 
 model %>% 
   report()
 
 model %>% 
   gg_tsresiduals()
+```
+The residuals of the model looks sufficiently normally distributed, but there is one spike at lag 13 which we were not able to adjust for. Price data is notoriously difficult to create good models on, as there are many variables and events that can affect it. Looking at the residuals it looks like the model finds it difficult to fit values in late 2022, this can be explained by abnormally high prices in this period. Since we want to project a more general price level over a longer time it is not critical that our model can explain these price spikes. Thus, we accept the model.  
 
+Next we create a forecast for each scenario with the corresponding data.
+
+```{r, warning=FALSE, message=FALSE}
+# Scenario 1
+print("Scenario 1: Steady vrep and steady load")
 pred1 <- 
   model %>% 
   forecast(., new_data = (future %>% mutate(exchange = s1, load = steady_load)))
 
 pred1 %>% 
-  autoplot(pdf)
+  autoplot(pdf) +
+  labs(title = "Projection for Scenario 1", x = "Date", y = "Price in €/MWh")
 
+# Scenario 2
+print("Scenario 2: Increasing vrep and steady load")
 pred2 <- 
   model %>% 
   forecast(., new_data = (future %>% mutate(exchange = s2, load = steady_load))) 
 
 pred2 %>% 
-  autoplot(pdf)
+  autoplot(pdf) +
+  labs(title = "Projection for Scenario 2", x = "Date", y = "Price in €/MWh")
 
+# Scenario 3
+print("Scenario 3: Steady vrep and increasing load")
 pred3 <- 
   model %>% 
   forecast(., new_data = (future %>% mutate(exchange = s3, load = increasing_load))) 
 
 pred3 %>% 
-  autoplot(pdf)
+  autoplot(pdf) +
+  labs(title = "Projection for Scenario 3", x = "Date", y = "Price in €/MWh")
 
+# Scenario 4
+print("Scenario 4: Increasing vrep and increasing load")
 pred4 <- 
   model %>% 
   forecast(., new_data = (future %>% mutate(exchange = s4, load = increasing_load))) 
 
 pred4 %>% 
-  autoplot(pdf)
+  autoplot(pdf) +
+  labs(title = "Projection for Scenario 4", x = "Date", y = "Price in €/MWh")
 
 ```
+Looking at the projections for the different scenarios they all share a similar seasonality, where the prices are lower in the summer months and higher during the winter months. As time elapses, the uncertainty of the projection increases, an expected result due to limited explanatory power of the model. This is also emphasized by the residual plot above. It should also be noted that at the model does not differentiate between negative and positive prices, and finds each as likely. Domain knowledge on electricity markets does not support this notion. Negative prices are a relatively rare occurrence and is very unlikely to dip far below zero. However, our goal is to compare general price levels of different scenarios, rather than trying to giving an exact forecast, and this model will in this regard be suitable. 
 
-
-```{r}
+```{r, warning=FALSE, message=FALSE}
 tibble(Scenario = c("Scenario 1", "Scenario 2", "Scenario 3", "Scenario 4"),
-       Mean = c(mean(pred1$.mean), mean(pred2$.mean), mean(pred3$.mean), mean(pred4$.mean)),
-       "% diff from Scenario 1" = 
+       vrep = c("Steady", "Increasing", "Steady", "Increasing"),
+       load = c("Steady", "Steady", "Increasing", "Increasing"),
+       Mean = c(paste0(round(mean(pred1$.mean), 2), " €/MWh"), 
+                paste0(round(mean(pred2$.mean), 2), " €/MWh"), 
+                paste0(round(mean(pred3$.mean), 2), " €/MWh"), 
+                paste0(round(mean(pred4$.mean), 2), " €/MWh")),
+       "% diff mean" = 
          c(
-           paste0(round(abs(mean(pred1$.mean) - mean(pred1$.mean)) / mean(pred1$.mean) * 100, 2), "%"), 
-           paste0(round(abs(mean(pred1$.mean) - mean(pred2$.mean)) / mean(pred1$.mean) * 100, 2), "%"), 
-           paste0(round(abs(mean(pred1$.mean) - mean(pred3$.mean)) / mean(pred1$.mean) * 100, 2), "%"), 
-           paste0(round(abs(mean(pred1$.mean) - mean(pred4$.mean)) / mean(pred1$.mean) * 100, 2), "%")))
-
-
+           paste0(round(-(mean(pred1$.mean) - mean(pred1$.mean)) / mean(pred1$.mean) * 100, 2), "%"), 
+           paste0(round(-(mean(pred1$.mean) - mean(pred2$.mean)) / mean(pred1$.mean) * 100, 2), "%"),
+           paste0(round(-(mean(pred1$.mean) - mean(pred3$.mean)) / mean(pred1$.mean) * 100, 2), "%"), 
+           paste0(round(-(mean(pred1$.mean) - mean(pred4$.mean)) / mean(pred1$.mean) * 100, 2), "%")),
+       std = c(sqrt(var(pred1$.mean)), 
+               sqrt(var(pred2$.mean)), 
+               sqrt(var(pred3$.mean)), 
+               sqrt(var(pred4$.mean)))) %>% 
+  pander()
 ```
+In the table above the calculated mean and standard deviation for each scenario are presented. We compare with Scenario 1 to examine how an increase in variable renewable production and an increase in consumption affects the spot price level to 2030. 
 
+Scenario 2, with an 50% increase in variable renewable energy and steady consumption to 2030, has a 6.49% lower price level than the base scenario. 
