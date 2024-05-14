@@ -196,6 +196,34 @@ do.call(cbind, lapply(x, is.nan))
 df[is.nan(df)] <- 0
 ```
 
+## Stationarity testing
+
+Before we do anything else we want to ensure that the data we will later use is stationary. This is done by conducting an Augmented Dickey-Fuller (adf) test.
+
+```{r, warning=FALSE, message=FALSE}
+df_adf_test <- df %>% 
+  group_by(date) %>% 
+  summarise(price = first(price),
+            gen = first(gen),
+            load = first(load))
+
+ex_DE <- df %>% filter(area == "DE")
+ex_DK <- df %>% filter(area == "DK")
+ex_NL <- df %>% filter(area == "NL")
+ex_UK <- df %>% filter(area == "UK")
+  
+
+adf.test(df_adf_test$price) # stationary
+adf.test(df_adf_test$gen) # stationary
+adf.test(df_adf_test$load) # not stationary
+
+adf.test(ex_DE$exchange) # stationary
+adf.test(ex_DK$exchange) # stationary
+adf.test(ex_NL$exchange) # stationary
+adf.test(ex_UK$exchange) # stationary
+```
+We find that all data is stationary within a statistically significant level, except the load (consumption) data, which is likely because of its seasonality. This will be addressed by introducing measures to account for seasonality in all forecasting models where the consumption is present as a variable.
+
 ## Descriptive analysis
 
 To create a price-model using exchange, load and vre as explanatory variables, we need to synthesize future data for these variables. Additionally, the model must account for the maximum transmission capacity of each interconnector, ensuring that exchange cannot exceed the physical constraints of transmission.  
@@ -487,6 +515,8 @@ forecast_exchange <- function(a) {
     fill_gaps() %>%
     model(mod = ARIMA(exchange ~ vre + load + fourier(period = 7, K = 3)))
   
+  print(model$mod)
+  
   model %>% 
     gg_tsresiduals() %>% 
     print()
@@ -529,7 +559,7 @@ forecast_exchange <- function(a) {
            select(date, area, s1, s2, s3, s4))
 }
 
-
+set.seed(434) # Set seed for reproducibility
 exchange_forecast <- map(areas, forecast_exchange) %>% 
   bind_rows() %>% 
   group_by(date) %>% 
