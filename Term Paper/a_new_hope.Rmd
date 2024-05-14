@@ -1,7 +1,7 @@
 ---
-title: "a_new_hope"
-author: "Gulbrand Galaasen"
-date: "2024-05-09"
+title: "Projecting Norwegian Electricity Spot Prices Prior To 2030: A Scenario Analysis"
+author: "Gulbrand Galaasen & Matias Kongsvik"
+date: "2024-05-15"
 output: word_document
 ---
 
@@ -126,25 +126,26 @@ gather_generation <- function(area, year) {
       `colnames<-`(c("date", "sol", "wnd_off", "wnd_on")) %>% 
       drop_na() %>% 
       separate(date, sep="-", into=c("date", NULL)) %>% 
-      mutate(vrep = as.double(sol) + as.double(wnd_off) + as.double(wnd_on)) %>%
+      mutate(vre = as.double(sol) + as.double(wnd_off) + as.double(wnd_on)) %>%
       mutate(date = as.Date(date, "%d.%m.%Y %H:%M")) %>% 
       group_by(date) %>% 
-      summarize(vrep = mean(vrep)) %>% 
+      summarize(vre = mean(vre)) %>% 
       filter(date < as.Date(CUT_OFF))
   }
 }
 
+# Generation
 gather_generation_area <- function(area) {
   # Special case for UK data as these are not present in Etsoe because of Brexit
   if (area == "UK") {
     read_csv(paste0("data/generation/gen_", area, "/gen_", area, ".csv")) %>% 
       .[,c(3,6,7)] %>% 
-      `colnames<-`(c("date", "type", "vrep")) %>%
+      `colnames<-`(c("date", "type", "vre")) %>%
       filter(type %in% c("WIND")) %>% 
-      mutate(vrep = as.double(vrep)) %>% 
+      mutate(vre = as.double(vre)) %>% 
       mutate(date = as.Date(with_tz(date, tzone = "Europe/Oslo"), tz = "Europe/Oslo")) %>% 
       group_by(date) %>%
-      summarize(vrep = mean(vrep, na.rm = TRUE)) %>% 
+      summarize(vre = mean(vre, na.rm = TRUE)) %>% 
       arrange(date) %>% 
       filter(date < as.Date(CUT_OFF)) %>% 
       mutate(area = area)
@@ -179,13 +180,13 @@ load_NO <- gather_load_area("NO")
 gen_NO <- gather_generation_area("NO")
 
 # Variable renewable production
-vrep <- map(areas, gather_generation_area) %>% 
+vre <- map(areas, gather_generation_area) %>% 
   bind_rows()
 ```
 
 ```{r, warning=FALSE, message=FALSE}
 df <- exchange %>% 
-  inner_join(., vrep, by = c("date", "area")) %>% 
+  inner_join(., vre, by = c("date", "area")) %>% 
   inner_join(., gen_NO[,c(1,2)], by = c("date")) %>% 
   inner_join(., load_NO[,c(1,2)], by = c("date")) %>% 
   inner_join(., price[,c(1,2)], by = c("date"))
@@ -197,13 +198,37 @@ df[is.nan(df)] <- 0
 
 ## Descriptive analysis
 
-To create a price-model using exchange, load and vrep as explanatory variables, we need to synthesize future data for these variables. Additionally, the model must account for the maximum transmission capacity of each interconnector, ensuring that exchange cannot exceed the physical constraints of transmission.  
+To create a price-model using exchange, load and vre as explanatory variables, we need to synthesize future data for these variables. Additionally, the model must account for the maximum transmission capacity of each interconnector, ensuring that exchange cannot exceed the physical constraints of transmission.  
 
 Descriptive analysis of the data will provide insight into the drivers for each variable, enabling us to synthesize scenarios of future data to be used in our final price-model. Below is the code for the scatterplots with linear regression lines for the explanatory variables, facet wrapped by area. 
 
 The scatterplots will enable us to better understand how the correlation between one explanatory variable and the other for each area.  
 
 ## Descriptive analysis of price
+
+Our overall goal is to project price, and thus we need to understand what drives price. 
+
+```{r, warning = FALSE, message = FALSE}
+price_df <-
+  df %>% 
+  group_by(date) %>% 
+  summarise(price = first(price),
+            exchange = sum(exchange),
+            gen = first(gen),
+            load = first(load)) %>% 
+  pivot_longer(cols = c("exchange", "gen", "load"))
+
+price_df %>% 
+  filter(value != 0) %>% 
+  ggplot(aes(x = value, y = price, color = date)) +
+  geom_point(cex = 0.7) +
+  facet_wrap(~ name, scales = 'free_x')+
+  geom_smooth(method = "loess", color = "red") +
+  labs(title = "Price drivers", x = "value", y = "Price in €/MWh", color = "Date") + 
+  theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
+
+```
+
 
 ## Descriptive analysis of exchange
 
@@ -212,30 +237,30 @@ Facet_gen <- df %>%
   select(date, exchange, area, gen) %>% 
   filter(exchange != 0) %>% 
   ggplot(aes(x = gen, y = exchange, color = date)) +
-  geom_point() +
+  geom_point(cex = 0.7) +
   facet_wrap(~ area, scales = 'free_y')+
   geom_smooth(method = "lm", color = "red") +
-  labs(title = "Title XXXX", x = "Generation", y = "Exchange", color = "Date") + 
+  labs(title = "Exchange explained by Generation", x = "Generation", y = "Exchange", color = "Date") + 
   theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
 
-Facet_vrep <- df %>% 
-  select(date, exchange, area, vrep) %>% 
+Facet_vre <- df %>% 
+  select(date, exchange, area, vre) %>% 
   filter(exchange != 0) %>% 
-  ggplot(aes(x = vrep, y = exchange, color = date)) +
-  geom_point() +
+  ggplot(aes(x = vre, y = exchange, color = date)) +
+  geom_point(cex = 0.7) +
   facet_wrap(~ area, scales = 'free')+
   geom_smooth(method = "lm", color = "red") +
-  labs(title = "Title XXXX", x = "VREP", y = "Exchange", color = "Date") + 
+  labs(title = "Exchange explained by VRE", x = "VRE", y = "Exchange", color = "Date") + 
   theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
 
 Facet_load <- df %>% 
   select(date, exchange, area, load) %>% 
   filter(exchange != 0) %>% 
   ggplot(aes(x = load, y = exchange, color = date)) +
-  geom_point() +
+  geom_point(cex = 0.7) +
   facet_wrap(~ area, scales = 'free')+
   geom_smooth(method = "lm", color = "red") +
-  labs(title = "Title XXXX", x = "Load", y = "Exchange", color = "Date") + 
+  labs(title = "Exchange explained by Consumption", x = "Consumption", y = "Exchange", color = "Date") + 
   theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
 ```
 
@@ -245,10 +270,10 @@ Facet_gen
 
 The plot above indicates a negative correlation between exchange and generation in NO across all areas, meaning an increase in export is correlated with an increase in NO generation. The incline of the regression lines suggests the degree of correlation is similar in size(forholdet?). NO appears to be a net exporter to all areas, although this is less evident for DK.  Norwegian import when domestic generation is low seems to be more prominent for DE and DK, than NL and UK. This might suggest that Norwegian power producers are more capable of adjusting generation to power imported from DE and DK, or that power generation in DK is more prevalent during periods of low power generation in Norway, possibly due to high water values.  
 ```{r, warning=FALSE, message=FALSE}
-Facet_vrep
+Facet_vre
 ```
 
-The plot above indicates a varying degree of positive correlation between exchange and variable renewable energy production in border areas, showing a trend of import when vrep is available. However, this correlation is negligible for the UK. Conversely, DK and DE appear to have a linear relationship between exchange and vrep. This might suggest that vrep production is a driver for exchange between NO and these areas. This does not seem to be the case for UK where there is no incline.  
+The plot above indicates a varying degree of positive correlation between exchange and variable renewable energy production in border areas, showing a trend of import when vre is available. However, this correlation is negligible for the UK. Conversely, DK and DE appear to have a linear relationship between exchange and vre. This might suggest that vre production is a driver for exchange between NO and these areas. This does not seem to be the case for UK where there is no incline.  
 
 ```{r}
 Facet_load
@@ -275,12 +300,12 @@ get_coeff_gen <- function(a) {
     .$coeff
 }
 
-get_coeff_vrep <- function(a) {
+get_coeff_vre <- function(a) {
   df %>% 
-    select(date, exchange, area, vrep) %>% 
+    select(date, exchange, area, vre) %>% 
     filter(exchange != 0) %>% 
     filter(area == a) %>% 
-    lm(data = ., formula = exchange ~ vrep) %>% 
+    lm(data = ., formula = exchange ~ vre) %>% 
     summary(.) %>% 
     .$coefficients %>% 
     as_tibble() %>% 
@@ -313,7 +338,7 @@ get_coeff_load <- function(a) {
 
 tibble(area = areas) %>% 
   mutate(gen = unlist(map(areas, get_coeff_gen)),
-         vrep = unlist(map(areas, get_coeff_vrep)),
+         vre = unlist(map(areas, get_coeff_vre)),
          load = unlist(map(areas, get_coeff_load))) %>% 
   pander()
 ```
@@ -327,7 +352,6 @@ res <- map(c("SE", "FI"), gather_cross_flow) %>%
   summarise(exchange = sum(exchange))
 
 df %>% 
-  #filter(area != "DE") %>% 
   group_by(date) %>% 
   summarise(exchange = sum(exchange),
             gen = first(gen),
@@ -355,7 +379,7 @@ DATE_RANGE <- seq(as.Date(CUT_OFF), as.Date("2029-12-31"), by = "day")
 N_DAYS <- length(DATE_RANGE)
 
 load_inc <- (seq(1:N_DAYS) / N_DAYS * 0.1) + 1
-vrep_inc <- (seq(1:N_DAYS) / N_DAYS * 0.5) + 1
+vre_inc <- (seq(1:N_DAYS) / N_DAYS * 0.5) + 1
 
 ```
 
@@ -364,19 +388,19 @@ Since we want to forecast the exchange with variable renewable energy production
 We start by synthesizing variable renewable production. This is done by taking data from 2023 and creating a pool of values for each month and area. Then for a single date, a future value is drawn from this pool given a month and area, and is then multiplied by a random factor [0.9, 1.1] to essentially simulate the uncertainty of wind and solar for a given day. Doing it this way the idea is to keep monthly trends for future values, while also introducing uncertainty that is present in such a variable.  
 
 ```{r, warning=FALSE, message=FALSE}
-# Synthesize vrep
-vrep_area_month <-
+# Synthesize vre
+vre_area_month <-
   df %>% 
   filter(date >= as.Date("2023-01-01")) %>% 
   filter(date < as.Date("2024-01-01")) %>% 
   mutate(month = month(date)) %>% 
-  select(month, area, vrep)
+  select(month, area, vre)
 
-draw_vrep <- function(a, m) {
-  vrep_area_month %>%
+draw_vre <- function(a, m) {
+  vre_area_month %>%
     filter(area == a) %>% 
     filter(month == m) %>% 
-    .$vrep %>% 
+    .$vre %>% 
     sample(1, replace = TRUE) * runif(1, min = 0.9, max = 1.1)
 } 
 ```
@@ -429,16 +453,16 @@ create_dataset_area <- function(a) {
     df %>% 
     filter(area == a) %>% 
     filter(date >= as.Date(from_date)) %>% 
-    select(date, area, exchange, vrep, load) %>% 
-    mutate(increasing_vrep = NA,
+    select(date, area, exchange, vre, load) %>% 
+    mutate(increasing_vre = NA,
            increasing_load = NA)
   
   new_df <- 
     tibble(date = DATE_RANGE,
            area = a,
            exchange = NA,
-           vrep = unlist(map2(a, month(date), draw_vrep)),
-           increasing_vrep = unlist(map2(a, month(date), draw_vrep)) * vrep_inc,
+           vre = unlist(map2(a, month(date), draw_vre)),
+           increasing_vre = unlist(map2(a, month(date), draw_vre)) * vre_inc,
            load = future_load$steady_load,
            increasing_load = future_load$increasing_load)
 
@@ -475,37 +499,37 @@ forecast_exchange <- function(a) {
   model <- 
     data_fit %>% 
     fill_gaps() %>%
-    model(mod = ARIMA(exchange ~ vrep + load + fourier(period = 7, K = 3)))
+    model(mod = ARIMA(exchange ~ vre + load + fourier(period = 7, K = 3)))
   
   model %>% 
     gg_tsresiduals() %>% 
     print()
   
-  # Scenario 1: steady vrep and steady load
+  # Scenario 1: steady vre and steady load
   pred1 <- 
     model %>% 
     forecast(., new_data = data_pred) %>% 
     mutate(s1 = unlist(map2(.mean, rep(import_cap, N_DAYS), min))) %>% 
     mutate(s1 = unlist(map2(s1, rep(export_cap, N_DAYS), max))) 
   
-  # Scenario 2: Increasing vrep and steady load
+  # Scenario 2: Increasing vre and steady load
   pred2 <- 
     model %>% 
-    forecast(., new_data = (data_pred %>% mutate(vrep = increasing_vrep))) %>% 
+    forecast(., new_data = (data_pred %>% mutate(vre = increasing_vre))) %>% 
     mutate(f = unlist(map2(.mean, rep(import_cap, N_DAYS), min))) %>% 
     mutate(f = unlist(map2(f, rep(export_cap, N_DAYS), max)))
 
-  # Scenario 3: Steady vrep and increasing load
+  # Scenario 3: Steady vre and increasing load
   pred3 <- 
     model %>% 
     forecast(., new_data = (data_pred %>% mutate(load = increasing_load))) %>% 
     mutate(f = unlist(map2(.mean, rep(import_cap, N_DAYS), min))) %>% 
     mutate(f = unlist(map2(f, rep(export_cap, N_DAYS), max)))
 
-  # Scenario 4: Increasing vrep and increasing load
+  # Scenario 4: Increasing vre and increasing load
   pred4 <- 
     model %>% 
-    forecast(., new_data = (data_pred %>% mutate(vrep = increasing_vrep, load = increasing_load))) %>% 
+    forecast(., new_data = (data_pred %>% mutate(vre = increasing_vre, load = increasing_load))) %>% 
     mutate(f = unlist(map2(.mean, rep(import_cap, N_DAYS), min))) %>% 
     mutate(f = unlist(map2(f, rep(export_cap, N_DAYS), max)))
   
@@ -575,7 +599,7 @@ Next we create a forecast for each scenario with the corresponding data.
 
 ```{r, warning=FALSE, message=FALSE}
 # Scenario 1
-print("Scenario 1: Steady vrep and steady load")
+print("Scenario 1: Steady vre and steady load")
 pred1 <- 
   model %>% 
   forecast(., new_data = (future %>% mutate(exchange = s1, load = steady_load)))
@@ -585,7 +609,7 @@ pred1 %>%
   labs(title = "Projection for Scenario 1", x = "Date", y = "Price in €/MWh")
 
 # Scenario 2
-print("Scenario 2: Increasing vrep and steady load")
+print("Scenario 2: Increasing vre and steady load")
 pred2 <- 
   model %>% 
   forecast(., new_data = (future %>% mutate(exchange = s2, load = steady_load))) 
@@ -595,7 +619,7 @@ pred2 %>%
   labs(title = "Projection for Scenario 2", x = "Date", y = "Price in €/MWh")
 
 # Scenario 3
-print("Scenario 3: Steady vrep and increasing load")
+print("Scenario 3: Steady vre and increasing load")
 pred3 <- 
   model %>% 
   forecast(., new_data = (future %>% mutate(exchange = s3, load = increasing_load))) 
@@ -605,7 +629,7 @@ pred3 %>%
   labs(title = "Projection for Scenario 3", x = "Date", y = "Price in €/MWh")
 
 # Scenario 4
-print("Scenario 4: Increasing vrep and increasing load")
+print("Scenario 4: Increasing vre and increasing load")
 pred4 <- 
   model %>% 
   forecast(., new_data = (future %>% mutate(exchange = s4, load = increasing_load))) 
@@ -619,7 +643,7 @@ Looking at the projections for the different scenarios they all share a similar 
 
 ```{r, warning=FALSE, message=FALSE}
 tibble(Scenario = c("Scenario 1", "Scenario 2", "Scenario 3", "Scenario 4"),
-       vrep = c("Steady", "Increasing", "Steady", "Increasing"),
+       vre = c("Steady", "Increasing", "Steady", "Increasing"),
        load = c("Steady", "Steady", "Increasing", "Increasing"),
        Mean = c(paste0(round(mean(pred1$.mean), 2), " €/MWh"), 
                 paste0(round(mean(pred2$.mean), 2), " €/MWh"), 
@@ -637,6 +661,10 @@ tibble(Scenario = c("Scenario 1", "Scenario 2", "Scenario 3", "Scenario 4"),
                sqrt(var(pred4$.mean)))) %>% 
   pander()
 ```
-In the table above the calculated mean and standard deviation for each scenario are presented. We compare with Scenario 1 to examine how an increase in variable renewable production and an increase in consumption affects the spot price level to 2030. 
+In the table above the calculated mean and standard deviation for each scenario are presented. We compare each scenario with Scenario 1 to examine how an increase in variable renewable production and an increase in consumption affects the spot price level prior to 2030. 
 
-Scenario 2, with an 50% increase in variable renewable energy and steady consumption to 2030, has a 6.49% lower price level than the base scenario. 
+Scenario 2, where an 50% increase in variable renewable energy production and steady consumption is modeled, has a 6.49% lower price level than the base scenario. This results coincides with our intuition. If there is a higher production in the overseas countries, this production will partly go to Norway, shifting the supply curve positively, thus reducing the price level. The standard deviation, which we interpret as price volatility, is somewhat lower. This is not what we would expect, as an increase in variable renewable energy would induce higher volatility in the overseas production, which again would transfer to the supply curve in Norway. This might be because of the bottlenecks of transmission, or simply that the data is too aggregated on a daily level, and that we would actually find such a result in an hourly resolution. Our rather simplified modelling assumptions might also be the cause of this. 
+
+Scenario 3, where steady variable renewable energy production and an 10% increasing consumption is modeled, there is a 10.07% increase in the price level compared to Scenario 1. This aligns with our intuition, where a higher consumption positively shifts the demand curve, resulting in higher prices. Here the standard deviation is also higher than Scenario 1, which also makes sense as the positive shift in demand generally increases the prices over time. 
+
+Scenario 4, where an 50% increase in variable renewable energy production and an 10% increasing consumption is modeled, gives a 3.82% increase in the price level compared to Scenario 1. After examining Scenario 
